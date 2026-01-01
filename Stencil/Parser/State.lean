@@ -29,15 +29,16 @@ def getPosition : Parser Position := do
 /-- Check if at end of input -/
 def atEnd : Parser Bool := do
   let s ← get
-  return s.pos >= s.input.length
+  return s.input.atEnd ⟨s.pos⟩
 
 /-- Peek at current character without consuming -/
 def peek? : Parser (Option Char) := do
   let s ← get
-  if s.pos >= s.input.length then
+  let p : String.Pos := ⟨s.pos⟩
+  if s.input.atEnd p then
     return none
   else
-    return some (s.input.get ⟨s.pos⟩)
+    return some (s.input.get p)
 
 /-- Peek at current character, error if at end -/
 def peek : Parser Char := do
@@ -48,13 +49,15 @@ def peek : Parser Char := do
 /-- Consume and return current character, updating line/column -/
 def next : Parser Char := do
   let s ← get
-  if s.pos >= s.input.length then
+  let p : String.Pos := ⟨s.pos⟩
+  if s.input.atEnd p then
     throw (.unexpectedEnd "input")
-  let c := s.input.get ⟨s.pos⟩
+  let c := s.input.get p
+  let nextP := s.input.next p  -- Correctly advances by char's byte length
   let (newLine, newCol) :=
     if c == '\n' then (s.line + 1, 1)
     else (s.line, s.column + 1)
-  set { s with pos := s.pos + 1, line := newLine, column := newCol }
+  set { s with pos := nextP.byteIdx, line := newLine, column := newCol }
   return c
 
 /-- Try to consume a specific character -/
@@ -83,8 +86,11 @@ def expectString (expected : String) : Parser Unit := do
 /-- Peek ahead n characters without consuming -/
 def peekString (n : Nat) : Parser String := do
   let s ← get
-  let endPos := min (s.pos + n) s.input.length
-  return s.input.extract ⟨s.pos⟩ ⟨endPos⟩
+  let mut p : String.Pos := ⟨s.pos⟩
+  for _ in [:n] do
+    if s.input.atEnd p then break
+    p := s.input.next p
+  return s.input.extract ⟨s.pos⟩ p
 
 /-- Try to match and consume a string -/
 def tryString (expected : String) : Parser Bool := do
