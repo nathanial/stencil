@@ -73,6 +73,10 @@ def readUntilAndConsume (stop : String) : Parser String := do
 def isIdentChar (c : Char) : Bool :=
   c.isAlpha || c.isDigit || c == '_'
 
+/-- Check if character is valid in a partial/template name (allows path separators) -/
+def isPartialNameChar (c : Char) : Bool :=
+  c.isAlpha || c.isDigit || c == '_' || c == '/' || c == '-'
+
 /-- Check if character is valid in a variable path -/
 def isPathChar (c : Char) : Bool :=
   c.isAlpha || c.isDigit || c == '_' || c == '.' || c == '@'

@@ -275,7 +275,7 @@ def parsePartialParams : Parser (List (String × Expr)) := do
 /-- Parse a partial with parameters: `{{> name key=value}}` -/
 def parsePartial (pos : Position) : Parser Node := do
   skipWhitespace
-  let name ← readWhile1 isIdentChar "partial name"
+  let name ← readWhile1 isPartialNameChar "partial name"
   let params ← parsePartialParams
   skipWhitespace
   let _ ← Parser.tryString "}}"
@@ -575,7 +575,7 @@ mutual
       if ← Parser.tryChar '>' then
         -- Partial block: {{#> name}}...{{/name}}
         skipWhitespace
-        let name ← readWhile1 isIdentChar "partial name"
+        let name ← readWhile1 isPartialNameChar "partial name"
         let params ← parsePartialParams
         skipWhitespace
         let trimAfter ← tryTrimEnd
@@ -599,7 +599,7 @@ mutual
       -- Partial
       let _ ← Parser.next
       skipWhitespace
-      let name ← readWhile1 isIdentChar "partial name"
+      let name ← readWhile1 isPartialNameChar "partial name"
       let params ← parsePartialParams
       skipWhitespace
       let trimAfter ← tryTrimEnd
