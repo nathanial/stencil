@@ -3,6 +3,7 @@
   Template render context
 -/
 import Stencil.Core.Value
+import Stencil.Core.Error
 import Stencil.AST.Types
 import Std.Data.HashMap
 
@@ -18,10 +19,17 @@ structure LoopMeta where
 /-- Registry of partial templates -/
 abbrev PartialRegistry := Std.HashMap String Template
 
+/-- Custom filter function type -/
+abbrev CustomFilterFn := Value → List String → Option Position → RenderResult Value
+
+/-- Registry of custom filters -/
+abbrev FilterRegistry := Std.HashMap String CustomFilterFn
+
 /-- Template render context -/
 structure Context where
   data : Value
   partials : PartialRegistry := {}
+  customFilters : FilterRegistry := {}
   parent : Option Context := none
   loopMeta : Option LoopMeta := none
   deriving Inhabited
@@ -66,6 +74,7 @@ partial def lookup (ctx : Context) (path : String) : Option Value :=
 def pushScope (ctx : Context) (data : Value) (loopInfo : LoopMeta) : Context :=
   { data := data
   , partials := ctx.partials
+  , customFilters := ctx.customFilters
   , parent := some ctx
   , loopMeta := some loopInfo
   }
@@ -74,6 +83,7 @@ def pushScope (ctx : Context) (data : Value) (loopInfo : LoopMeta) : Context :=
 def pushSectionScope (ctx : Context) (data : Value) : Context :=
   { data := data
   , partials := ctx.partials
+  , customFilters := ctx.customFilters
   , parent := some ctx
   , loopMeta := none
   }
@@ -85,6 +95,14 @@ def addPartial (ctx : Context) (name : String) (tmpl : Template) : Context :=
 /-- Look up a partial -/
 def getPartial (ctx : Context) (name : String) : Option Template :=
   ctx.partials.get? name
+
+/-- Register a custom filter -/
+def addFilter (ctx : Context) (name : String) (fn : CustomFilterFn) : Context :=
+  { ctx with customFilters := ctx.customFilters.insert name fn }
+
+/-- Look up a custom filter -/
+def getFilter (ctx : Context) (name : String) : Option CustomFilterFn :=
+  ctx.customFilters.get? name
 
 end Context
 

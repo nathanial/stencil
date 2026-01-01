@@ -33,7 +33,8 @@ def renderVarToString (ref : VarRef) : RenderM String := do
   let value := ctx.lookup ref.path |>.getD .null
 
   -- Apply filters with position for error reporting
-  let finalValue ← match Filters.applyFilters ref.filters value (some ref.pos) with
+  -- Use custom filters if any are registered
+  let finalValue ← match Filters.applyFiltersWithCustom ref.filters value (some ref.pos) ctx.customFilters with
     | .ok v => pure v
     | .error e => throw e
 

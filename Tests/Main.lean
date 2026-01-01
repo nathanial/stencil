@@ -292,6 +292,150 @@ test "Type error includes position" := do
   | .error e => throw <| IO.userError s!"Wrong error type: {e}"
   | .ok _ => throw <| IO.userError "Expected type error"
 
+-- New Filter Tests
+
+test "Filter slice - string" := do
+  let tmpl ← shouldBeOk (parse "{{text | slice \"1\" \"3\"}}") "parsing"
+  let ctx := context [("text", .string "hello")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "ell"
+
+test "Filter slice - array" := do
+  let tmpl ← shouldBeOk (parse "{{items | slice \"1\" \"2\" | join \",\"}}") "parsing"
+  let ctx := context [("items", .array #[.string "a", .string "b", .string "c", .string "d"])]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "b,c"
+
+test "Filter sort - simple" := do
+  let tmpl ← shouldBeOk (parse "{{items | sort | join \",\"}}") "parsing"
+  let ctx := context [("items", .array #[.string "c", .string "a", .string "b"])]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "a,b,c"
+
+test "Filter uniq" := do
+  let tmpl ← shouldBeOk (parse "{{items | uniq | join \",\"}}") "parsing"
+  let ctx := context [("items", .array #[.string "a", .string "b", .string "a", .string "c"])]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "a,b,c"
+
+test "Filter map" := do
+  let tmpl ← shouldBeOk (parse "{{users | map \"name\" | join \", \"}}") "parsing"
+  let ctx := context [("users", .array #[
+    .object #[("name", .string "Alice")],
+    .object #[("name", .string "Bob")]
+  ])]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "Alice, Bob"
+
+test "Filter where" := do
+  let tmpl ← shouldBeOk (parse "{{users | where \"active\" | length}}") "parsing"
+  let ctx := context [("users", .array #[
+    .object #[("name", .string "Alice"), ("active", .bool true)],
+    .object #[("name", .string "Bob"), ("active", .bool false)],
+    .object #[("name", .string "Carol"), ("active", .bool true)]
+  ])]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "2"
+
+test "Filter truncate" := do
+  let tmpl ← shouldBeOk (parse "{{text | truncate \"10\"}}") "parsing"
+  let ctx := context [("text", .string "Hello, this is a long text")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "Hello, thi..."
+
+test "Filter truncate with custom ellipsis" := do
+  let tmpl ← shouldBeOk (parse "{{text | truncate \"5\" \"---\"}}") "parsing"
+  let ctx := context [("text", .string "Hello World")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "Hello---"
+
+test "Filter replace" := do
+  let tmpl ← shouldBeOk (parse "{{text | replace \"world\" \"Lean\"}}") "parsing"
+  let ctx := context [("text", .string "Hello world!")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "Hello Lean!"
+
+test "Filter split" := do
+  let tmpl ← shouldBeOk (parse "{{csv | split \",\" | length}}") "parsing"
+  let ctx := context [("csv", .string "a,b,c,d")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "4"
+
+test "Filter number" := do
+  let tmpl ← shouldBeOk (parse "{{price | number \"2\"}}") "parsing"
+  let ctx := context [("price", .int 42)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "42.00"
+
+test "Filter pluralize - singular" := do
+  let tmpl ← shouldBeOk (parse "{{count}} {{count | pluralize \"item\" \"items\"}}") "parsing"
+  let ctx := context [("count", .int 1)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "1 item"
+
+test "Filter pluralize - plural" := do
+  let tmpl ← shouldBeOk (parse "{{count}} {{count | pluralize \"item\" \"items\"}}") "parsing"
+  let ctx := context [("count", .int 5)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "5 items"
+
+test "Filter abs" := do
+  let tmpl ← shouldBeOk (parse "{{num | abs}}") "parsing"
+  let ctx := context [("num", .int (-42))]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "42"
+
+test "Filter keys" := do
+  let tmpl ← shouldBeOk (parse "{{obj | keys | join \",\"}}") "parsing"
+  let ctx := context [("obj", .object #[("a", .int 1), ("b", .int 2)])]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "a,b"
+
+test "Filter values" := do
+  let tmpl ← shouldBeOk (parse "{{obj | values | join \",\"}}") "parsing"
+  let ctx := context [("obj", .object #[("a", .int 1), ("b", .int 2)])]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "1,2"
+
+test "Filter escape_js" := do
+  let tmpl ← shouldBeOk (parse "{{{text | escape_js}}}") "parsing"  -- Use raw output
+  let ctx := context [("text", .string "say \"hi\"")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  -- After JS escaping, "say \"hi\"" becomes "say \\\"hi\\\""
+  result.render ≡ "say \\\"hi\\\""
+
+test "Filter escape_uri" := do
+  let tmpl ← shouldBeOk (parse "{{text | escape_uri}}") "parsing"
+  let ctx := context [("text", .string "hello world!")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "hello%20world%21"
+
+test "Custom filter registration" := do
+  -- Define a custom filter that doubles a number
+  let doubleFilter : FilterFn := fun v _ pos =>
+    match v with
+    | .int n => .ok (.int (n * 2))
+    | other => .error (.typeError "double" "Int" other.typeName pos)
+
+  let tmpl ← shouldBeOk (parse "{{num | double}}") "parsing"
+  let ctx := context [("num", .int 21)]
+    |> (fun c => withFilter c "double" doubleFilter)
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "42"
+
+test "Custom filter overrides builtin" := do
+  -- Define a custom uppercase that adds exclamation
+  let customUpper : FilterFn := fun v _ pos =>
+    match v with
+    | .string s => .ok (.string (s.toUpper ++ "!"))
+    | other => .error (.typeError "uppercase" "String" other.typeName pos)
+
+  let tmpl ← shouldBeOk (parse "{{text | uppercase}}") "parsing"
+  let ctx := context [("text", .string "hello")]
+    |> (fun c => withFilter c "uppercase" customUpper)
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "HELLO!"
+
 #generate_tests
 
 end Stencil.Tests

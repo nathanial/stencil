@@ -68,6 +68,13 @@ def withPartialString (ctx : Context) (name : String) (input : String) : ParseRe
   | .ok tmpl => .ok (ctx.addPartial name tmpl)
   | .error e => .error e
 
+/-- Filter function type for custom filters -/
+abbrev FilterFn := Filters.FilterFn
+
+/-- Register a custom filter in a context -/
+def withFilter (ctx : Context) (name : String) (fn : FilterFn) : Context :=
+  ctx.addFilter name fn
+
 /-- Format a parse error with source context for display -/
 def formatParseError (err : ParseError) (input : String) : String :=
   ParseError.format err input

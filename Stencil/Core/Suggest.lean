@@ -50,8 +50,18 @@ def findBestMatch (name : String) (candidates : List String) (maxDistance : Nat 
 
 /-- Known filter names for suggestions -/
 def builtinFilterNames : List String :=
-  ["uppercase", "lowercase", "trim", "length", "default", "join",
-   "first", "last", "reverse", "json", "capitalize"]
+  -- String filters
+  ["uppercase", "lowercase", "capitalize", "trim", "truncate", "replace", "split",
+   -- Array/collection filters
+   "length", "first", "last", "reverse", "join", "slice", "sort", "uniq", "map", "where",
+   -- Object filters
+   "keys", "values",
+   -- Numeric filters
+   "number", "abs", "pluralize",
+   -- Utility filters
+   "default", "json",
+   -- Escape filters
+   "escape_js", "escape_uri"]
 
 /-- Suggest a similar filter name -/
 def suggestFilter (name : String) : Option String :=

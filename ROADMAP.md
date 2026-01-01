@@ -2,27 +2,30 @@
 
 Future improvements and features for the Stencil template engine.
 
-## v0.1.0 - Enhanced Filters & Expressions
+## v0.1.0 - Enhanced Filters & Expressions ✅
 
 ### Additional Filters
-- [ ] `slice` - Extract substring or array slice: `{{items | slice 0 3}}`
-- [ ] `sort` - Sort array: `{{items | sort}}` or `{{items | sort "name"}}`
-- [ ] `uniq` - Remove duplicates from array
-- [ ] `map` - Extract property from array of objects: `{{users | map "name"}}`
-- [ ] `where` - Filter array by property: `{{users | where "active" true}}`
-- [ ] `date` - Format dates: `{{timestamp | date "%Y-%m-%d"}}`
-- [ ] `number` - Format numbers: `{{price | number 2}}`
-- [ ] `pluralize` - Pluralization: `{{count | pluralize "item" "items"}}`
-- [ ] `truncate` - Truncate with ellipsis: `{{text | truncate 100}}`
-- [ ] `replace` - String replacement: `{{text | replace "old" "new"}}`
-- [ ] `split` - Split string to array: `{{csv | split ","}}`
-- [ ] `escape_js` - Escape for JavaScript strings
-- [ ] `escape_uri` - URI encoding
+- [x] `slice` - Extract substring or array slice: `{{items | slice "0" "3"}}`
+- [x] `sort` - Sort array: `{{items | sort}}` or `{{items | sort "name"}}`
+- [x] `uniq` - Remove duplicates from array
+- [x] `map` - Extract property from array of objects: `{{users | map "name"}}`
+- [x] `where` - Filter array by property: `{{users | where "active" "true"}}`
+- [ ] `date` - Format dates: `{{timestamp | date "%Y-%m-%d"}}` (future)
+- [x] `number` - Format numbers: `{{price | number "2"}}`
+- [x] `pluralize` - Pluralization: `{{count | pluralize "item" "items"}}`
+- [x] `truncate` - Truncate with ellipsis: `{{text | truncate "100"}}`
+- [x] `replace` - String replacement: `{{text | replace "old" "new"}}`
+- [x] `split` - Split string to array: `{{csv | split ","}}`
+- [x] `escape_js` - Escape for JavaScript strings
+- [x] `escape_uri` - URI encoding
+- [x] `abs` - Absolute value (bonus)
+- [x] `keys` - Get object keys as array (bonus)
+- [x] `values` - Get object values as array (bonus)
 
 ### Custom Filter Registration
-- [ ] API for registering custom filters at runtime
-- [ ] Filter validation and error handling
-- [ ] Filter documentation/introspection
+- [x] API for registering custom filters at runtime (`withFilter`)
+- [x] Filter validation and error handling
+- [ ] Filter documentation/introspection (future)
 
 ## v0.2.0 - Conditional Expressions
 
@@ -74,19 +77,19 @@ Future improvements and features for the Stencil template engine.
 - [ ] Inline partials: `{{#*inline "myPartial"}}...{{/inline}}`
 - [ ] Partial blocks: `{{#> layout}}content{{/layout}}`
 
-## v0.6.0 - Error Handling & Debugging
+## v0.6.0 - Error Handling & Debugging ✅
 
 ### Better Error Messages
-- [ ] Include line/column in all error messages
-- [ ] Source snippets in error output
-- [ ] Suggestions for common mistakes
-- [ ] Stack traces for nested template errors
+- [x] Include line/column in all error messages
+- [x] Source snippets in error output
+- [x] Suggestions for common mistakes (Levenshtein distance)
+- [ ] Stack traces for nested template errors (future)
 
 ### Debugging Support
-- [ ] `{{log variable}}` - Debug output
-- [ ] `{{debug}}` - Dump current context
-- [ ] Template source maps
-- [ ] Render timing/profiling
+- [ ] `{{log variable}}` - Debug output (future)
+- [ ] `{{debug}}` - Dump current context (future)
+- [ ] Template source maps (future)
+- [ ] Render timing/profiling (future)
 
 ## v0.7.0 - Performance
 
