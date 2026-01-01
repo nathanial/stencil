@@ -39,12 +39,12 @@ def parseFilters : Parser (List Filter) := do
   return filters
 
 /-- Parse a variable path with optional filters -/
-def parseVarRef (escaped : Bool) : Parser VarRef := do
+def parseVarRef (escaped : Bool) (pos : Position) : Parser VarRef := do
   skipWhitespace
   let path ← readWhile1 isPathChar "variable path"
   let filters ← parseFilters
   skipWhitespace
-  return { path, filters, escaped }
+  return { path, filters, escaped, pos }
 
 /-- Check for opening delimiter and detect type -/
 def checkOpenDelim : Parser Bool := do
@@ -58,12 +58,12 @@ def parseComment : Parser Node := do
   return .comment content.trim
 
 /-- Parse a partial: `{{> name }}` -/
-def parsePartial : Parser Node := do
+def parsePartial (pos : Position) : Parser Node := do
   skipWhitespace
   let name ← readWhile1 isIdentChar "partial name"
   skipWhitespace
   let _ ← Parser.tryString "}}"
-  return .«partial» name
+  return .«partial» name pos
 
 /-- Parse a closing tag: `{{/name}}` -/
 def parseCloseTag : Parser String := do
@@ -88,7 +88,7 @@ partial def parseText : Parser (Option Node) := do
 -- Mutually recursive parsing functions
 mutual
   /-- Parse a section opening: `{{#if condition}}` or `{{#each items}}` etc -/
-  partial def parseSection : Parser Node := do
+  partial def parseSection (startPos : Position) : Parser Node := do
     skipWhitespace
     let blockType ← readWhile1 Char.isAlpha "block type"
     skipWhitespace
@@ -97,11 +97,10 @@ mutual
     let argTrimmed := arg.trim
 
     -- Validate we have an argument
-    let pos ← Parser.getPosition
     if argTrimmed.isEmpty then
       let lb := "{{"
       let rb := "}}"
-      throw (.invalidTagSyntax pos s!"{lb}#{blockType}{rb} requires an argument")
+      throw (.invalidTagSyntax startPos s!"{lb}#{blockType}{rb} requires an argument")
 
     -- Push tag for matching
     Parser.pushTag blockType
@@ -121,12 +120,12 @@ mutual
 
     -- Dispatch based on block type
     match blockType with
-    | "if" => return .section argTrimmed false body elseBody
-    | "unless" => return .section argTrimmed true body elseBody
-    | "each" => return .each argTrimmed body elseBody
+    | "if" => return .section argTrimmed false body elseBody startPos
+    | "unless" => return .section argTrimmed true body elseBody startPos
+    | "each" => return .each argTrimmed body elseBody startPos
     | other =>
       -- Treat unknown blocks as sections
-      return .section other false body elseBody
+      return .section other false body elseBody startPos
 
   /-- Parse a single tag (after detecting `{{`) -/
   partial def parseTag : Parser Node := do
@@ -134,7 +133,7 @@ mutual
 
     -- Check for triple brace first
     if ← Parser.tryString "{{{" then
-      let ref ← parseVarRef false
+      let ref ← parseVarRef false pos
       if !(← Parser.tryString "}}}") then
         throw (.invalidTagSyntax pos "expected closing }}}")
       return .variable ref
@@ -152,7 +151,7 @@ mutual
     | some '#' =>
       -- Section open
       let _ ← Parser.next
-      parseSection
+      parseSection pos
 
     | some '/' =>
       -- Close tag - this is an error at top level
@@ -163,20 +162,20 @@ mutual
     | some '>' =>
       -- Partial
       let _ ← Parser.next
-      parsePartial
+      parsePartial pos
 
     | some '&' =>
       -- Unescaped variable (alternative syntax)
       let _ ← Parser.next
       skipWhitespace
-      let ref ← parseVarRef false
+      let ref ← parseVarRef false pos
       if !(← Parser.tryString "}}") then
         throw (.invalidTagSyntax pos "expected closing }}")
       return .variable ref
 
     | some _ =>
       -- Variable
-      let ref ← parseVarRef true
+      let ref ← parseVarRef true pos
       if !(← Parser.tryString "}}") then
         throw (.invalidTagSyntax pos "expected closing }}")
       return .variable ref

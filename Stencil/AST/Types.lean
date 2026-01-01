@@ -2,6 +2,7 @@
   Stencil.AST.Types
   Template AST node types
 -/
+import Stencil.Core.Position
 
 namespace Stencil
 
@@ -16,6 +17,7 @@ structure VarRef where
   path : String
   filters : List Filter := []
   escaped : Bool := true
+  pos : Position := default
   deriving Repr, BEq, Inhabited
 
 /-- Template AST node -/
@@ -27,11 +29,11 @@ inductive Node where
   /-- Variable interpolation -/
   | variable (ref : VarRef)
   /-- Conditional section (if/unless with optional else) -/
-  | section (name : String) (inverted : Bool) (body : List Node) (elseBody : List Node)
+  | section (name : String) (inverted : Bool) (body : List Node) (elseBody : List Node) (pos : Position)
   /-- Loop over array -/
-  | each (name : String) (body : List Node) (elseBody : List Node)
+  | each (name : String) (body : List Node) (elseBody : List Node) (pos : Position)
   /-- Include a partial template -/
-  | «partial» (name : String)
+  | «partial» (name : String) (pos : Position)
   deriving Repr, Inhabited
 
 /-- A parsed template -/

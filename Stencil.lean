@@ -68,4 +68,21 @@ def withPartialString (ctx : Context) (name : String) (input : String) : ParseRe
   | .ok tmpl => .ok (ctx.addPartial name tmpl)
   | .error e => .error e
 
+/-- Format a parse error with source context for display -/
+def formatParseError (err : ParseError) (input : String) : String :=
+  ParseError.format err input
+
+/-- Format a render error with source context for display -/
+def formatRenderError (err : RenderError) (input : String) : String :=
+  RenderError.format err input
+
+/-- Parse and render, returning formatted error on failure -/
+def compileWithErrors (input : String) (ctx : Context) : Except String Scribe.Html :=
+  match parse input with
+  | .ok tmpl =>
+    match render tmpl ctx with
+    | .ok html => .ok html
+    | .error e => .error (formatRenderError e input)
+  | .error e => .error (formatParseError e input)
+
 end Stencil

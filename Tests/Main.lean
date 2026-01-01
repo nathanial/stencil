@@ -9,6 +9,10 @@ namespace Stencil.Tests
 open Crucible
 open Stencil
 
+/-- Check if a string contains a substring -/
+def contains (haystack : String) (needle : String) : Bool :=
+  (haystack.splitOn needle).length != 1
+
 testSuite "Stencil Tests"
 
 -- Parser Tests
@@ -215,6 +219,78 @@ test "Render partial" := do
     |>.addPartial "header" headerTmpl
   let result ← shouldBeOk (render mainTmpl ctx) "rendering"
   result.render ≡ "<header>My Page</header><main>content</main>"
+
+-- Error Message Tests
+
+test "Levenshtein distance - identical" := do
+  let dist := levenshtein "hello" "hello"
+  dist ≡ 0
+
+test "Levenshtein distance - one change" := do
+  let dist := levenshtein "hello" "hallo"
+  dist ≡ 1
+
+test "Levenshtein distance - two changes" := do
+  let dist := levenshtein "hello" "hxllo"
+  dist ≡ 1
+
+test "Levenshtein distance - empty string" := do
+  let dist := levenshtein "" "hello"
+  dist ≡ 5
+
+test "Filter suggestion - typo" := do
+  let suggestion := suggestFilter "upprcase"
+  match suggestion with
+  | some "uppercase" => pure ()
+  | _ => throw <| IO.userError "Expected suggestion 'uppercase'"
+
+test "Filter suggestion - no match" := do
+  let suggestion := suggestFilter "foobar123"
+  match suggestion with
+  | none => pure ()
+  | some s => throw <| IO.userError s!"Unexpected suggestion: {s}"
+
+test "Unknown filter error has position" := do
+  let tmpl ← shouldBeOk (parse "{{name | upprcase}}") "parsing"
+  let ctx := context [("name", .string "test")]
+  match render tmpl ctx with
+  | .error (.unknownFilter "upprcase" (some pos) (some "uppercase")) =>
+    ensure (pos.line == 1) "position should be line 1"
+  | .error e => throw <| IO.userError s!"Wrong error type: {e}"
+  | .ok _ => throw <| IO.userError "Expected error for unknown filter"
+
+test "Unknown partial error has position" := do
+  let tmpl ← shouldBeOk (parse "test{{> missing}}done") "parsing"
+  match render tmpl Context.empty with
+  | .error (.unknownPartial "missing" (some pos)) =>
+    ensure (pos.line == 1) "position should be line 1"
+  | .error e => throw <| IO.userError s!"Wrong error type: {e}"
+  | .ok _ => throw <| IO.userError "Expected error for unknown partial"
+
+test "Source context formatting" := do
+  let input := "line1\nline2\n{{name | badfilter}}\nline4"
+  let pos : Position := { offset := 12, line := 3, column := 10 }
+  let ctx := sourceContext input pos
+  ensure (contains ctx "line2") "should show line before"
+  ensure (contains ctx "badfilter") "should show error line"
+  ensure (contains ctx "line4") "should show line after"
+  ensure (contains ctx "^") "should show caret"
+
+test "ParseError format includes source" := do
+  let input := "Hello {{#if}}"
+  match parse input with
+  | .error e =>
+    let formatted := formatParseError e input
+    ensure (contains formatted "#if") "should show context"
+  | .ok _ => throw <| IO.userError "Expected parse error"
+
+test "Type error includes position" := do
+  let tmpl ← shouldBeOk (parse "{{items | uppercase}}") "parsing"
+  let ctx := context [("items", .array #[.int 1, .int 2])]
+  match render tmpl ctx with
+  | .error (.typeError "uppercase" "String" "Array" (some _)) => pure ()
+  | .error e => throw <| IO.userError s!"Wrong error type: {e}"
+  | .ok _ => throw <| IO.userError "Expected type error"
 
 #generate_tests
 

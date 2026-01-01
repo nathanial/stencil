@@ -32,8 +32,8 @@ def renderVarToString (ref : VarRef) : RenderM String := do
   -- Return null for missing variables (allows default filter to work)
   let value := ctx.lookup ref.path |>.getD .null
 
-  -- Apply filters
-  let finalValue ← match Filters.applyFilters ref.filters value with
+  -- Apply filters with position for error reporting
+  let finalValue ← match Filters.applyFilters ref.filters value (some ref.pos) with
     | .ok v => pure v
     | .error e => throw e
 
@@ -55,7 +55,7 @@ mutual
     return .fragment htmls
 
   /-- Render a section (if/unless) -/
-  partial def renderSection (name : String) (inverted : Bool) (body : List Node) (elseBody : List Node) : RenderM Html := do
+  partial def renderSection (name : String) (inverted : Bool) (body : List Node) (elseBody : List Node) (_pos : Position) : RenderM Html := do
     let ctx ← getContext
     let value := ctx.lookup name |>.getD .null
     let truthy := value.isTruthy
@@ -67,7 +67,7 @@ mutual
       renderNodes elseBody
 
   /-- Render an each loop -/
-  partial def renderEach (name : String) (body : List Node) (elseBody : List Node) : RenderM Html := do
+  partial def renderEach (name : String) (body : List Node) (elseBody : List Node) (_pos : Position) : RenderM Html := do
     let ctx ← getContext
     match ctx.lookup name with
     | some (.array items) =>
@@ -88,11 +88,11 @@ mutual
       renderNodes elseBody
 
   /-- Render a partial -/
-  partial def renderPartial (name : String) : RenderM Html := do
+  partial def renderPartial (name : String) (pos : Position) : RenderM Html := do
     let ctx ← getContext
     match ctx.getPartial name with
     | some tmpl => renderNodes tmpl.nodes
-    | none => throw (.unknownPartial name)
+    | none => throw (.unknownPartial name (some pos))
 
   /-- Render a single node -/
   partial def renderNode (node : Node) : RenderM Html :=
@@ -100,9 +100,9 @@ mutual
     | .text content => return .raw content  -- Template text is trusted, use raw
     | .comment _ => return .fragment []  -- Comments produce no output
     | .variable ref => renderVariable ref
-    | .section name inverted body elseBody => renderSection name inverted body elseBody
-    | .each name body elseBody => renderEach name body elseBody
-    | .«partial» name => renderPartial name
+    | .section name inverted body elseBody pos => renderSection name inverted body elseBody pos
+    | .each name body elseBody pos => renderEach name body elseBody pos
+    | .«partial» name pos => renderPartial name pos
 end
 
 /-- Render a complete template -/
