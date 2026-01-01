@@ -13,6 +13,7 @@ structure ParserState where
   line : Nat := 1
   column : Nat := 1
   tagStack : List String := []
+  trimNextLeading : Bool := false  -- For whitespace control: trim leading whitespace from next text
   deriving Repr
 
 /-- Parser monad combining state and error handling -/
@@ -112,6 +113,15 @@ def popTag : Parser (Option String) := do
 def currentTag : Parser (Option String) := do
   let s ← get
   return s.tagStack.head?
+
+/-- Get the trimNextLeading flag -/
+def getTrimNext : Parser Bool := do
+  let s ← get
+  return s.trimNextLeading
+
+/-- Set the trimNextLeading flag -/
+def setTrimNext (v : Bool) : Parser Unit := do
+  modify fun s => { s with trimNextLeading := v }
 
 /-- Run parser on input, returning result -/
 def run {α : Type} (p : Parser α) (input : String) : ParseResult α :=

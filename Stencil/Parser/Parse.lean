@@ -51,18 +51,36 @@ def checkOpenDelim : Parser Bool := do
   let ahead ← Parser.peekString 2
   return ahead == "{{"
 
+/-- Check if character is a trim marker (~ or -) -/
+def isTrimMarker (c : Char) : Bool := c == '~' || c == '-'
+
+/-- Try to consume a trim marker at start of tag -/
+def tryTrimStart : Parser Bool := do
+  match ← Parser.peek? with
+  | some c => if isTrimMarker c then let _ ← Parser.next; return true else return false
+  | none => return false
+
+/-- Try to consume a trim marker before closing delimiter -/
+def tryTrimEnd : Parser Bool := do
+  match ← Parser.peek? with
+  | some c => if isTrimMarker c then let _ ← Parser.next; return true else return false
+  | none => return false
+
 /-- Parse a comment: `{{! ... }}` -/
 def parseComment : Parser Node := do
   let content ← readUntil "}}"
   let _ ← Parser.tryString "}}"
   return .comment content.trim
 
-/-- Parse a closing tag: `{{/name}}` -/
+/-- Parse a closing tag: `{{/name}}` (with optional trim markers) -/
 def parseCloseTag : Parser String := do
   skipWhitespace
   let name ← readWhile1 isIdentChar "tag name"
   skipWhitespace
+  -- Check for trim marker before }}
+  let trimAfter ← tryTrimEnd
   let _ ← Parser.tryString "}}"
+  if trimAfter then Parser.setTrimNext true
   return name
 
 /-- Parse text content until a tag or end -/
@@ -256,13 +274,22 @@ def parsePartial (pos : Position) : Parser Node := do
   let _ ← Parser.tryString "}}"
   return .«partial» name params pos
 
+/-- Trim trailing whitespace from the last text node in a list -/
+private def trimLastNodeRight (nodes : List Node) : List Node :=
+  match nodes.reverse with
+  | .text s :: rest => (.text s.trimRight :: rest).reverse
+  | _ => nodes
+
 -- Mutually recursive parsing functions
 mutual
   /-- Parse a conditional (if/unless) with optional else-if chains -/
-  partial def parseConditional (startPos : Position) (inverted : Bool) (tagName : String) : Parser Node := do
+  partial def parseConditional (startPos : Position) (inverted : Bool) (tagName : String) (_trimBefore : Bool) : Parser Node := do
     -- Parse the initial condition
     let condition ← parseCondition
+    skipWhitespace
+    let trimAfter ← tryTrimEnd
     let _ ← Parser.tryString "}}"
+    if trimAfter then Parser.setTrimNext true
 
     -- Push tag for matching (use the actual tag name: "if" or "unless")
     Parser.pushTag tagName
@@ -306,14 +333,14 @@ mutual
     return .conditional branches elseBody inverted startPos
 
   /-- Parse a section opening: `{{#if condition}}` or `{{#each items}}` etc -/
-  partial def parseSection (startPos : Position) : Parser Node := do
+  partial def parseSection (startPos : Position) (trimBefore : Bool) : Parser Node := do
     skipWhitespace
     let blockType ← readWhile1 Char.isAlpha "block type"
     skipWhitespace
 
     match blockType with
-    | "if" => parseConditional startPos false "if"
-    | "unless" => parseConditional startPos true "unless"
+    | "if" => parseConditional startPos false "if" trimBefore
+    | "unless" => parseConditional startPos true "unless" trimBefore
     | "extends" =>
       -- Template inheritance: {{#extends "base"}}
       skipWhitespace
@@ -328,7 +355,9 @@ mutual
       else
         readWhile1 isIdentChar "template name"
       skipWhitespace
+      let trimAfter ← tryTrimEnd
       let _ ← Parser.tryString "}}"
+      if trimAfter then Parser.setTrimNext true
       return .extends name startPos
     | "block" =>
       -- Named block: {{#block "content"}}...{{/block}}
@@ -344,19 +373,27 @@ mutual
       else
         readWhile1 isIdentChar "block name"
       skipWhitespace
+      let trimAfter ← tryTrimEnd
       let _ ← Parser.tryString "}}"
+      if trimAfter then Parser.setTrimNext true
       Parser.pushTag "block"
       let (body, _) ← parseNodes ["block"]
       let _ ← Parser.popTag
       return .block name body startPos
     | "super" =>
       -- Call parent block: {{#super}}
+      let trimAfter ← tryTrimEnd
       let _ ← Parser.tryString "}}"
+      if trimAfter then Parser.setTrimNext true
       return .super startPos
     | "each" =>
       let arg ← readUntil "}}"
+      -- Check for trim marker at end of arg (before }})
+      let trimAfter := arg.endsWith "~" || arg.endsWith "-"
+      let argClean := if trimAfter then arg.dropRight 1 else arg
       let _ ← Parser.tryString "}}"
-      let argTrimmed := arg.trim
+      if trimAfter then Parser.setTrimNext true
+      let argTrimmed := argClean.trim
 
       if argTrimmed.isEmpty then
         let lb := "{{"
@@ -377,8 +414,12 @@ mutual
     | other =>
       -- Unknown blocks treated as simple conditionals on variable truthiness
       let arg ← readUntil "}}"
+      -- Check for trim marker at end of arg (before }})
+      let trimAfter := arg.endsWith "~" || arg.endsWith "-"
+      let argClean := if trimAfter then arg.dropRight 1 else arg
       let _ ← Parser.tryString "}}"
-      let argTrimmed := arg.trim
+      if trimAfter then Parser.setTrimNext true
+      let argTrimmed := argClean.trim
 
       if argTrimmed.isEmpty then
         let lb := "{{"
@@ -398,26 +439,41 @@ mutual
       -- Treat as simple variable truthiness check
       return .conditional [(.var argTrimmed, body)] elseBody false startPos
 
-  /-- Parse a single tag (after detecting `{{`) -/
-  partial def parseTag : Parser Node := do
+  /-- Parse a single tag (after detecting `{{`), returns (Node, trimBefore) -/
+  partial def parseTag : Parser (Node × Bool) := do
     let pos ← Parser.getPosition
 
-    -- Check for triple brace first
+    -- Check for triple brace first: {{{var}}}
     if ← Parser.tryString "{{{" then
+      let trimBefore ← tryTrimStart
+      skipWhitespace
       let ref ← parseVarRef false pos
+      skipWhitespace
+      let trimAfter ← tryTrimEnd
       if !(← Parser.tryString "}}}") then
         throw (.invalidTagSyntax pos "expected closing }}}")
-      return .variable ref
+      if trimAfter then Parser.setTrimNext true
+      return (.variable ref, trimBefore)
 
     -- Consume the opening {{
     let _ ← Parser.tryString "{{"
 
+    -- Check for trim marker after {{
+    let trimBefore ← tryTrimStart
+    skipWhitespace
+
     -- Peek at next char to determine tag type
     match ← Parser.peek? with
     | some '!' =>
-      -- Comment
+      -- Comment: {{! ... }}
       let _ ← Parser.next
-      parseComment
+      let content ← readUntil "}}"
+      -- Check for trim marker before }}
+      let trimAfter := content.endsWith "~" || content.endsWith "-"
+      let _ ← Parser.tryString "}}"
+      if trimAfter then Parser.setTrimNext true
+      let trimmedContent := if trimAfter then content.dropRight 1 |>.trimRight else content
+      return (.comment trimmedContent.trim, trimBefore)
 
     | some '#' =>
       -- Section open - check for partial block {{#>}}
@@ -428,13 +484,16 @@ mutual
         let name ← readWhile1 isIdentChar "partial name"
         let params ← parsePartialParams
         skipWhitespace
+        let trimAfter ← tryTrimEnd
         let _ ← Parser.tryString "}}"
+        if trimAfter then Parser.setTrimNext true
         Parser.pushTag name
         let (body, _) ← parseNodes [name]
         let _ ← Parser.popTag
-        return .partialBlock name params body pos
+        return (.partialBlock name params body pos, trimBefore)
       else
-        parseSection pos
+        let node ← parseSection pos trimBefore
+        return (node, trimBefore)
 
     | some '/' =>
       -- Close tag - this is an error at top level
@@ -445,23 +504,36 @@ mutual
     | some '>' =>
       -- Partial
       let _ ← Parser.next
-      parsePartial pos
+      skipWhitespace
+      let name ← readWhile1 isIdentChar "partial name"
+      let params ← parsePartialParams
+      skipWhitespace
+      let trimAfter ← tryTrimEnd
+      let _ ← Parser.tryString "}}"
+      if trimAfter then Parser.setTrimNext true
+      return (.«partial» name params pos, trimBefore)
 
     | some '&' =>
       -- Unescaped variable (alternative syntax)
       let _ ← Parser.next
       skipWhitespace
       let ref ← parseVarRef false pos
+      skipWhitespace
+      let trimAfter ← tryTrimEnd
       if !(← Parser.tryString "}}") then
         throw (.invalidTagSyntax pos "expected closing }}")
-      return .variable ref
+      if trimAfter then Parser.setTrimNext true
+      return (.variable ref, trimBefore)
 
     | some _ =>
       -- Variable
       let ref ← parseVarRef true pos
+      skipWhitespace
+      let trimAfter ← tryTrimEnd
       if !(← Parser.tryString "}}") then
         throw (.invalidTagSyntax pos "expected closing }}")
-      return .variable ref
+      if trimAfter then Parser.setTrimNext true
+      return (.variable ref, trimBefore)
 
     | none =>
       throw (.unexpectedEnd "tag")
@@ -476,12 +548,16 @@ mutual
 
       -- Check for closing or else tag
       let ahead ← Parser.peekString 3
-      if ahead.startsWith "{{/" || ahead.startsWith "{{e" then
+      if ahead.startsWith "{{/" || ahead.startsWith "{{e" || ahead.startsWith "{{~" || ahead.startsWith "{{-" then
         -- Save position for potential backtrack
         let s ← get
 
         if ahead.startsWith "{{/" then
           let _ ← Parser.tryString "{{/"
+          -- Check for trim marker after {{/
+          let trimBefore ← tryTrimStart
+          if trimBefore then
+            nodes := trimLastNodeRight nodes
           let name ← parseCloseTag
           if stopTags.contains name then
             foundTag := some name
@@ -492,38 +568,80 @@ mutual
             let expected := stopTags.head?
             throw (.unmatchedTag pos name expected)
 
-        else if ← Parser.tryString "{{else" then
-          -- Check if it's {{else}} or {{else if ...}}
+        else if ← Parser.tryString "{{" then
+          -- Check for trim marker that might precede / or else
+          let trimBefore ← tryTrimStart
           skipWhitespace
-          match ← Parser.peek? with
-          | some '}' =>
-            -- It's {{else}}, consume the closing }}
-            let _ ← Parser.tryString "}}"
-            if stopTags.contains "else" then
-              foundTag := some "else"
+
+          -- Check for close tag: {{~/ or {{-/
+          if ← Parser.tryChar '/' then
+            if trimBefore then
+              nodes := trimLastNodeRight nodes
+            -- Also check for another trim marker after /
+            let _ ← tryTrimStart
+            let name ← parseCloseTag
+            if stopTags.contains name then
+              foundTag := some name
               break
             else
-              -- else is not expected here, restore and treat as text
+              let pos ← Parser.getPosition
+              let expected := stopTags.head?
+              throw (.unmatchedTag pos name expected)
+
+          else if ← Parser.tryString "else" then
+            if trimBefore then
+              nodes := trimLastNodeRight nodes
+            -- Check if it's {{else}} or {{else if ...}}
+            skipWhitespace
+            match ← Parser.peek? with
+            | some c =>
+              if c == '~' || c == '-' then
+                -- Trim marker before }}
+                let _ ← Parser.next
+                skipWhitespace
+              if c == '}' || c == '~' || c == '-' then
+                -- Check for trim marker
+                let trimAfter ← tryTrimEnd
+                -- It's {{else}}, consume the closing }}
+                let _ ← Parser.tryString "}}"
+                if trimAfter then Parser.setTrimNext true
+                if stopTags.contains "else" then
+                  foundTag := some "else"
+                  break
+                else
+                  -- else is not expected here, restore and treat as text
+                  set s
+              else
+                -- It's {{else if ...}} or {{else something}}, report as "else"
+                if stopTags.contains "else" then
+                  foundTag := some "else"
+                  break
+                else
+                  -- else is not expected here, restore and treat as text
+                  set s
+            | none =>
               set s
-          | some _ =>
-            -- It's {{else if ...}} or {{else something}}, report as "else"
-            if stopTags.contains "else" then
-              foundTag := some "else"
-              break
-            else
-              -- else is not expected here, restore and treat as text
-              set s
-          | none =>
+          else
+            -- Not an else or close tag, restore
             set s
 
       -- Try to parse text first
       match ← parseText with
-      | some textNode =>
-        nodes := nodes ++ [textNode]
+      | some (.text content) =>
+        -- Check if we need to trim leading whitespace
+        let shouldTrim ← Parser.getTrimNext
+        let trimmedContent := if shouldTrim then content.trimLeft else content
+        if shouldTrim then Parser.setTrimNext false
+        if !trimmedContent.isEmpty then
+          nodes := nodes ++ [.text trimmedContent]
+      | some other =>
+        nodes := nodes ++ [other]
       | none =>
         -- No text, try tag
         if ← checkOpenDelim then
-          let tagNode ← parseTag
+          let (tagNode, trimBefore) ← parseTag
+          if trimBefore then
+            nodes := trimLastNodeRight nodes
           nodes := nodes ++ [tagNode]
         else if ← Parser.atEnd then
           break

@@ -46,13 +46,13 @@ Future improvements and features for the Stencil template engine.
 - [ ] `{{#switch}}` / `{{#case}}` blocks (future)
 - [ ] Inline conditionals: `{{if condition then "yes" else "no"}}` (future)
 
-## v0.3.0 - Whitespace Control
+## v0.3.0 - Whitespace Control ✅
 
 ### Whitespace Trimming
-- [ ] `{{~` and `~}}` for whitespace trimming (Handlebars-style)
-- [ ] `{{-` and `-}}` alternative syntax
-- [ ] Standalone tag detection (remove surrounding newlines)
-- [ ] Configuration option for default whitespace handling
+- [x] `{{~` and `~}}` for whitespace trimming (Handlebars-style)
+- [x] `{{-` and `-}}` alternative syntax
+- [ ] Standalone tag detection (remove surrounding newlines) (future)
+- [ ] Configuration option for default whitespace handling (future)
 
 ## v0.4.0 - Block Helpers
 

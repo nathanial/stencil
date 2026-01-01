@@ -650,6 +650,58 @@ test "Extends multiple blocks" := do
   let result ← shouldBeOk (render childTmpl ctx) "rendering"
   result.render ≡ "<head>My Page</head><body>Hello</body>"
 
+-- Whitespace Control Tests
+
+test "Trim right with ~}}" := do
+  let tmpl ← shouldBeOk (parse "Hello {{name~}}   World") "parsing"
+  let ctx := Context.fromPairs [("name", .string "Bob")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "Hello BobWorld"
+
+test "Trim left with {{~" := do
+  let tmpl ← shouldBeOk (parse "Hello   {{~name}} World") "parsing"
+  let ctx := Context.fromPairs [("name", .string "Bob")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "HelloBob World"
+
+test "Trim both with {{~ and ~}}" := do
+  let tmpl ← shouldBeOk (parse "Hello   {{~name~}}   World") "parsing"
+  let ctx := Context.fromPairs [("name", .string "Bob")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "HelloBobWorld"
+
+test "Trim with - marker (alternative)" := do
+  let tmpl ← shouldBeOk (parse "Hello   {{-name-}}   World") "parsing"
+  let ctx := Context.fromPairs [("name", .string "Bob")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "HelloBobWorld"
+
+test "Trim in if block" := do
+  let tmpl ← shouldBeOk (parse "A   {{~#if show~}}   B   {{~/if~}}   C") "parsing"
+  let ctx := Context.fromPairs [("show", .bool true)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "ABC"
+
+test "Trim in each loop" := do
+  -- Trim before/after the each block, but not inside
+  let tmpl ← shouldBeOk (parse "Items:{{#each items}} {{this}}{{/each}}!") "parsing"
+  let ctx := Context.fromPairs [("items", .array #[.string "a", .string "b"])]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "Items: a b!"
+
+test "Trim preserves content" := do
+  -- Trimming should only affect whitespace at boundaries
+  let tmpl ← shouldBeOk (parse "  {{~name~}}  ") "parsing"
+  let ctx := Context.fromPairs [("name", .string "Hi")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "Hi"
+
+test "No trim without markers" := do
+  let tmpl ← shouldBeOk (parse "Hello   {{name}}   World") "parsing"
+  let ctx := Context.fromPairs [("name", .string "Bob")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "Hello   Bob   World"
+
 #generate_tests
 
 end Stencil.Tests
