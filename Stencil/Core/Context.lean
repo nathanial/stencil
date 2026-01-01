@@ -86,6 +86,30 @@ partial def lookup (ctx : Context) (path : String) : Option Value :=
       | some p => p.lookup path
       | none => none
 
+/-- Look up using pre-split path parts (faster) -/
+partial def lookupParts (ctx : Context) (parts : List String) (path : String) : Option Value :=
+  -- Handle special variables (need original path for these)
+  if path == "this" || path == "." then
+    some ctx.data
+  else if path.startsWith "@" then
+    match ctx.loopMeta with
+    | some lm =>
+      match path with
+      | "@index" => some (.int lm.index)
+      | "@first" => some (.bool lm.first)
+      | "@last" => some (.bool lm.last)
+      | "@length" => some (.int lm.length)
+      | "@key" => lm.key.map .string
+      | _ => ctx.data.getPathParts parts
+    | none => ctx.data.getPathParts parts
+  else
+    match ctx.data.getPathParts parts with
+    | some v => some v
+    | none =>
+      match ctx.parent with
+      | some p => p.lookupParts parts path
+      | none => none
+
 /-- Create a child context for loop iteration -/
 def pushScope (ctx : Context) (data : Value) (loopInfo : LoopMeta) : Context :=
   { data := data

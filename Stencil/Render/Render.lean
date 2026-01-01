@@ -30,7 +30,8 @@ def withContext {α : Type} (ctx : Context) (m : RenderM α) : RenderM α :=
 def renderVarToString (ref : VarRef) : RenderM String := do
   let ctx ← getContext
   -- Return null for missing variables (allows default filter to work)
-  let value := ctx.lookup ref.path |>.getD .null
+  -- Use pre-split path parts for faster lookup
+  let value := ctx.lookupParts ref.pathParts ref.path |>.getD .null
 
   -- Apply filters with position for error reporting
   -- Use custom filters if any are registered

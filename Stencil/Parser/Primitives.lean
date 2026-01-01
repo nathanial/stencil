@@ -19,17 +19,21 @@ def skipWhitespace : Parser Unit := do
 
 /-- Read characters while predicate holds -/
 def readWhile (pred : Char → Bool) : Parser String := do
-  let mut result := ""
+  -- Track start position for efficient substring extraction
+  let s ← get
+  let startPos := s.pos
   while true do
     match ← Parser.peek? with
     | some c =>
       if pred c then
         let _ ← Parser.next
-        result := result.push c
       else
         break
     | none => break
-  return result
+  let s' ← get
+  let endPos := s'.pos
+  -- Extract substring directly (O(n) instead of O(n²))
+  return s.input.extract ⟨startPos⟩ ⟨endPos⟩
 
 /-- Read at least one character matching predicate -/
 def readWhile1 (pred : Char → Bool) (expected : String) : Parser String := do
@@ -43,16 +47,20 @@ def readWhile1 (pred : Char → Bool) (expected : String) : Parser String := do
 
 /-- Read until a delimiter string (not consuming the delimiter) -/
 def readUntil (stop : String) : Parser String := do
-  let mut result := ""
+  -- Track start position for efficient substring extraction
+  let s ← get
+  let startPos := s.pos
   while true do
     if ← Parser.atEnd then
       break
     let ahead ← Parser.peekString stop.length
     if ahead == stop then
       break
-    let c ← Parser.next
-    result := result.push c
-  return result
+    let _ ← Parser.next
+  let s' ← get
+  let endPos := s'.pos
+  -- Extract substring directly (O(n) instead of O(n²))
+  return s.input.extract ⟨startPos⟩ ⟨endPos⟩
 
 /-- Read until a delimiter string and consume it -/
 def readUntilAndConsume (stop : String) : Parser String := do

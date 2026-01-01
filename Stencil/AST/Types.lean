@@ -15,6 +15,7 @@ structure Filter where
 /-- A variable reference with optional filters -/
 structure VarRef where
   path : String
+  pathParts : List String := []  -- Pre-split path for fast lookup
   filters : List Filter := []
   escaped : Bool := true
   pos : Position := default

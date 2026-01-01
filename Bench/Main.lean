@@ -137,6 +137,18 @@ def main : IO Unit := do
     benchRender tmpl12 ctx12
   IO.println (Bench.formatResult r12)
 
+  -- Benchmark 13: Cached parse vs uncached
+  Bench.printHeader "Cached Parse (medium template)"
+  let mut engine := Stencil.Engine.new
+  -- First call populates cache
+  let (_, engine') := engine.parseCached! mediumTmpl
+  engine := engine'
+  let r13 ← Bench.benchWithWarmup "cached_parse" 100 10000 do
+    let (_, _) := engine.parseCached! mediumTmpl
+    pure ()
+  IO.println (Bench.formatResult r13)
+  IO.println s!"  (uncached was: {297.67}μs, cache hit: ~0μs expected)"
+
   -- Summary
   Bench.printHeader "Summary"
   IO.println "Benchmark suite complete."

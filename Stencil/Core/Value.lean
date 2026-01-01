@@ -56,6 +56,10 @@ def getPath (v : Value) (path : String) : Option Value :=
   let parts := parsePath path
   parts.foldlM (fun acc key => acc.get? key) v
 
+/-- Navigate using pre-split path parts (faster) -/
+def getPathParts (v : Value) (parts : List String) : Option Value :=
+  parts.foldlM (fun acc key => acc.get? key) v
+
 /-- Convert value to string for output -/
 partial def toString : Value → String
   | .null => ""

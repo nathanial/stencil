@@ -92,4 +92,44 @@ def compileWithErrors (input : String) (ctx : Context) : Except String Scribe.Ht
     | .error e => .error (formatRenderError e input)
   | .error e => .error (formatParseError e input)
 
+/-- Template engine with caching support -/
+structure Engine where
+  cache : TemplateCache
+  deriving Inhabited
+
+namespace Engine
+
+/-- Create a new engine with default cache -/
+def new : Engine := ⟨TemplateCache.empty⟩
+
+/-- Create engine with custom cache size -/
+def withCacheSize (maxSize : Nat) : Engine :=
+  ⟨TemplateCache.withMaxSize maxSize⟩
+
+/-- Parse with caching - returns cached template if available -/
+def parseCached (engine : Engine) (input : String) : ParseResult Template × Engine :=
+  match engine.cache.get? input with
+  | some tmpl => (.ok tmpl, engine)
+  | none =>
+    match Parser.parse input with
+    | .ok tmpl => (.ok tmpl, { engine with cache := engine.cache.put input tmpl })
+    | .error e => (.error e, engine)
+
+/-- Parse with caching, throwing on error -/
+def parseCached! (engine : Engine) (input : String) : Template × Engine :=
+  match engine.cache.get? input with
+  | some tmpl => (tmpl, engine)
+  | none =>
+    let tmpl := Stencil.parse! input
+    (tmpl, { engine with cache := engine.cache.put input tmpl })
+
+/-- Get current cache size -/
+def cacheSize (engine : Engine) : Nat := engine.cache.size
+
+/-- Clear the cache -/
+def clearCache (engine : Engine) : Engine :=
+  { engine with cache := engine.cache.clear }
+
+end Engine
+
 end Stencil

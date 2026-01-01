@@ -7,3 +7,4 @@ import Stencil.Core.Error
 import Stencil.Core.Value
 import Stencil.Core.Context
 import Stencil.Core.Suggest
+import Stencil.Core.Cache

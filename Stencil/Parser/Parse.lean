@@ -42,9 +42,11 @@ def parseFilters : Parser (List Filter) := do
 def parseVarRef (escaped : Bool) (pos : Position) : Parser VarRef := do
   skipWhitespace
   let path ← readWhile1 isPathChar "variable path"
+  -- Pre-split path for faster lookup at render time
+  let pathParts := path.splitOn "." |>.filter (!·.isEmpty)
   let filters ← parseFilters
   skipWhitespace
-  return { path, filters, escaped, pos }
+  return { path, pathParts, filters, escaped, pos }
 
 /-- Check for opening delimiter and detect type -/
 def checkOpenDelim : Parser Bool := do
@@ -85,14 +87,19 @@ def parseCloseTag : Parser String := do
 
 /-- Parse text content until a tag or end -/
 partial def parseText : Parser (Option Node) := do
-  let mut content := ""
+  -- Track start position for efficient substring extraction
+  let s ← get
+  let startPos := s.pos
   while true do
     if ← Parser.atEnd then break
     if ← checkOpenDelim then break
-    let c ← Parser.next
-    content := content.push c
-  if content.isEmpty then
+    let _ ← Parser.next
+  let s' ← get
+  let endPos := s'.pos
+  if startPos == endPos then
     return none
+  -- Extract substring directly (O(n) instead of O(n²))
+  let content := s.input.extract ⟨startPos⟩ ⟨endPos⟩
   return some (.text content)
 
 -- Expression parsing for conditionals
