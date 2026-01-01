@@ -702,6 +702,80 @@ test "No trim without markers" := do
   let result ← shouldBeOk (render tmpl ctx) "rendering"
   result.render ≡ "Hello   Bob   World"
 
+-- Block Helper Tests
+
+test "With block - changes context" := do
+  let tmpl ← shouldBeOk (parse "{{#with user}}Hello {{name}}{{/with}}") "parsing"
+  let ctx := Context.fromPairs [("user", .object #[("name", .string "Alice")])]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "Hello Alice"
+
+test "With block - else when falsy" := do
+  let tmpl ← shouldBeOk (parse "{{#with user}}Found{{else}}Not found{{/with}}") "parsing"
+  let ctx := Context.fromPairs [("user", .null)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "Not found"
+
+test "Let block - creates variables" := do
+  let tmpl ← shouldBeOk (parse "{{#let x=5 y=\"hi\"}}{{x}}-{{y}}{{/let}}") "parsing"
+  let ctx := Context.empty
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "5-hi"
+
+test "Let block - with expressions" := do
+  let tmpl ← shouldBeOk (parse "{{#let greeting=message}}{{greeting}}{{/let}}") "parsing"
+  let ctx := Context.fromPairs [("message", .string "Hello")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "Hello"
+
+test "Repeat block - count times" := do
+  let tmpl ← shouldBeOk (parse "{{#repeat 3}}X{{/repeat}}") "parsing"
+  let ctx := Context.empty
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "XXX"
+
+test "Repeat block - with @index" := do
+  let tmpl ← shouldBeOk (parse "{{#repeat 3}}{{@index}}{{/repeat}}") "parsing"
+  let ctx := Context.empty
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "012"
+
+test "Range block - numeric iteration" := do
+  let tmpl ← shouldBeOk (parse "{{#range 1 4}}{{this}}{{/range}}") "parsing"
+  let ctx := Context.empty
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "123"
+
+test "Range block - with @first/@last" := do
+  let tmpl ← shouldBeOk (parse "{{#range 0 3}}{{#if @first}}[{{/if}}{{this}}{{#if @last}}]{{/if}}{{/range}}") "parsing"
+  let ctx := Context.empty
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "[012]"
+
+test "Each with @length" := do
+  let tmpl ← shouldBeOk (parse "{{#each items}}{{@length}}{{/each}}") "parsing"
+  let ctx := Context.fromPairs [("items", .array #[.string "a", .string "b", .string "c"])]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "333"
+
+test "Each as named variable" := do
+  let tmpl ← shouldBeOk (parse "{{#each items as |item|}}{{item}}{{/each}}") "parsing"
+  let ctx := Context.fromPairs [("items", .array #[.string "a", .string "b"])]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "ab"
+
+test "Each as named variable with index" := do
+  let tmpl ← shouldBeOk (parse "{{#each items as |item idx|}}{{idx}}:{{item}} {{/each}}") "parsing"
+  let ctx := Context.fromPairs [("items", .array #[.string "a", .string "b"])]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "0:a 1:b "
+
+test "Each over object with @key" := do
+  let tmpl ← shouldBeOk (parse "{{#each obj}}{{@key}}={{this}} {{/each}}") "parsing"
+  let ctx := Context.fromPairs [("obj", .object #[("x", .int 1), ("y", .int 2)])]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "x=1 y=2 "
+
 #generate_tests
 
 end Stencil.Tests

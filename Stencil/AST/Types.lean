@@ -56,6 +56,16 @@ inductive Expr where
   | not (expr : Expr)
   deriving Repr, Inhabited
 
+/-- Each loop configuration -/
+structure EachConfig where
+  /-- Variable/path to iterate over -/
+  source : String
+  /-- Optional name for item variable (default: use item as context) -/
+  itemVar : Option String := none
+  /-- Optional name for index variable -/
+  indexVar : Option String := none
+  deriving Repr, Inhabited
+
 /-- Template AST node -/
 inductive Node where
   /-- Raw text content -/
@@ -66,8 +76,16 @@ inductive Node where
   | variable (ref : VarRef)
   /-- Conditional section with if/else-if/else chains -/
   | conditional (branches : List (Expr × List Node)) (elseBody : List Node) (inverted : Bool) (pos : Position)
-  /-- Loop over array -/
-  | each (name : String) (body : List Node) (elseBody : List Node) (pos : Position)
+  /-- Loop over array or object: {{#each items}} or {{#each items as |item idx|}} -/
+  | each (config : EachConfig) (body : List Node) (elseBody : List Node) (pos : Position)
+  /-- Change context: {{#with user}}...{{/with}} -/
+  | «with» (path : String) (body : List Node) (elseBody : List Node) (pos : Position)
+  /-- Local variables: {{#let x=value y=other}}...{{/let}} -/
+  | «let» (bindings : List (String × Expr)) (body : List Node) (pos : Position)
+  /-- Repeat content: {{#repeat 5}}...{{/repeat}} -/
+  | repeat (count : Expr) (body : List Node) (pos : Position)
+  /-- Numeric range: {{#range 1 10}}...{{/range}} -/
+  | range (start : Expr) («end» : Expr) (body : List Node) (pos : Position)
   /-- Include a partial template with optional parameters -/
   | «partial» (name : String) (params : List (String × Expr)) (pos : Position)
   /-- Partial block: {{#> layout}}content{{/layout}} -/

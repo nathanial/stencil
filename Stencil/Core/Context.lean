@@ -14,6 +14,8 @@ structure LoopMeta where
   index : Nat
   first : Bool
   last : Bool
+  length : Nat := 0       -- Total length of collection
+  key : Option String := none  -- Key for object iteration
   deriving Repr, Inhabited
 
 /-- Registry of partial templates -/
@@ -70,6 +72,8 @@ partial def lookup (ctx : Context) (path : String) : Option Value :=
       | "@index" => some (.int lm.index)
       | "@first" => some (.bool lm.first)
       | "@last" => some (.bool lm.last)
+      | "@length" => some (.int lm.length)
+      | "@key" => lm.key.map .string
       | _ => ctx.data.getPath path  -- Try data for other @ variables
     | none => ctx.data.getPath path  -- Try data for @ variables
   else

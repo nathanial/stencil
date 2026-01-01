@@ -387,18 +387,41 @@ mutual
       if trimAfter then Parser.setTrimNext true
       return .super startPos
     | "each" =>
-      let arg ← readUntil "}}"
-      -- Check for trim marker at end of arg (before }})
-      let trimAfter := arg.endsWith "~" || arg.endsWith "-"
-      let argClean := if trimAfter then arg.dropRight 1 else arg
+      -- Parse: {{#each items}} or {{#each items as |item idx|}}
+      skipWhitespace
+      let source ← readWhile1 isPathChar "variable path"
+      skipWhitespace
+
+      -- Check for "as |item idx|" syntax
+      let (itemVar, indexVar) ← if ← Parser.tryString "as" then
+        skipWhitespace
+        if ← Parser.tryChar '|' then
+          skipWhitespace
+          let item ← readWhile1 isIdentChar "item variable"
+          skipWhitespace
+          let idx ← do
+            match ← Parser.peek? with
+            | some c =>
+              if isIdentChar c then
+                let i ← readWhile1 isIdentChar "index variable"
+                pure (some i)
+              else
+                pure none
+            | none => pure none
+          skipWhitespace
+          let _ ← Parser.tryChar '|'
+          pure (some item, idx)
+        else
+          pure (none, none)
+      else
+        pure (none, none)
+
+      skipWhitespace
+      let trimAfter ← tryTrimEnd
       let _ ← Parser.tryString "}}"
       if trimAfter then Parser.setTrimNext true
-      let argTrimmed := argClean.trim
 
-      if argTrimmed.isEmpty then
-        let lb := "{{"
-        let rb := "}}"
-        throw (.invalidTagSyntax startPos s!"{lb}#each{rb} requires an argument")
+      let config : EachConfig := { source, itemVar, indexVar }
 
       Parser.pushTag "each"
       let (body, foundTag) ← parseNodes ["else", "each"]
@@ -410,7 +433,71 @@ mutual
         | _ => pure []
 
       let _ ← Parser.popTag
-      return .each argTrimmed body elseBody startPos
+      return .each config body elseBody startPos
+
+    | "with" =>
+      -- Parse: {{#with user}}...{{/with}}
+      skipWhitespace
+      let path ← readWhile1 isPathChar "variable path"
+      skipWhitespace
+      let trimAfter ← tryTrimEnd
+      let _ ← Parser.tryString "}}"
+      if trimAfter then Parser.setTrimNext true
+
+      Parser.pushTag "with"
+      let (body, foundTag) ← parseNodes ["else", "with"]
+
+      let elseBody ← match foundTag with
+        | some "else" =>
+          let (elsePart, _) ← parseNodes ["with"]
+          pure elsePart
+        | _ => pure []
+
+      let _ ← Parser.popTag
+      return .«with» path body elseBody startPos
+
+    | "let" =>
+      -- Parse: {{#let x=value y=other}}...{{/let}}
+      let bindings ← parsePartialParams  -- Reuse param parsing for key=value pairs
+      skipWhitespace
+      let trimAfter ← tryTrimEnd
+      let _ ← Parser.tryString "}}"
+      if trimAfter then Parser.setTrimNext true
+
+      Parser.pushTag "let"
+      let (body, _) ← parseNodes ["let"]
+      let _ ← Parser.popTag
+      return .«let» bindings body startPos
+
+    | "repeat" =>
+      -- Parse: {{#repeat 5}}...{{/repeat}}
+      skipWhitespace
+      let count ← parseAtom
+      skipWhitespace
+      let trimAfter ← tryTrimEnd
+      let _ ← Parser.tryString "}}"
+      if trimAfter then Parser.setTrimNext true
+
+      Parser.pushTag "repeat"
+      let (body, _) ← parseNodes ["repeat"]
+      let _ ← Parser.popTag
+      return .repeat count body startPos
+
+    | "range" =>
+      -- Parse: {{#range 1 10}}...{{/range}}
+      skipWhitespace
+      let startExpr ← parseAtom
+      skipWhitespace
+      let endExpr ← parseAtom
+      skipWhitespace
+      let trimAfter ← tryTrimEnd
+      let _ ← Parser.tryString "}}"
+      if trimAfter then Parser.setTrimNext true
+
+      Parser.pushTag "range"
+      let (body, _) ← parseNodes ["range"]
+      let _ ← Parser.popTag
+      return .range startExpr endExpr body startPos
     | other =>
       -- Unknown blocks treated as simple conditionals on variable truthiness
       let arg ← readUntil "}}"

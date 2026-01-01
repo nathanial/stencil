@@ -54,20 +54,20 @@ Future improvements and features for the Stencil template engine.
 - [ ] Standalone tag detection (remove surrounding newlines) (future)
 - [ ] Configuration option for default whitespace handling (future)
 
-## v0.4.0 - Block Helpers
+## v0.4.0 - Block Helpers ✅
 
 ### Custom Block Helpers
-- [ ] `{{#with user}}...{{/with}}` - Change context
-- [ ] `{{#let x=value}}...{{/let}}` - Local variables
-- [ ] `{{#repeat 5}}...{{/repeat}}` - Repeat content
-- [ ] `{{#range 1 10}}...{{/range}}` - Numeric iteration
-- [ ] Custom block helper registration API
+- [x] `{{#with user}}...{{/with}}` - Change context
+- [x] `{{#let x=value}}...{{/let}}` - Local variables
+- [x] `{{#repeat 5}}...{{/repeat}}` - Repeat content
+- [x] `{{#range 1 10}}...{{/range}}` - Numeric iteration
+- [ ] Custom block helper registration API (future)
 
 ### Enhanced Each
-- [ ] `{{#each items as |item index|}}` - Named iteration variables
-- [ ] `{{@key}}` for object iteration
-- [ ] `{{@length}}` for array length
-- [ ] `{{else}}` for empty arrays (already supported)
+- [x] `{{#each items as |item index|}}` - Named iteration variables
+- [x] `{{@key}}` for object iteration
+- [x] `{{@length}}` for array length
+- [x] `{{else}}` for empty arrays (already supported)
 
 ## v0.5.0 - Template Composition ✅
 

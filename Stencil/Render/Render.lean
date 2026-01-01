@@ -132,9 +132,9 @@ mutual
     renderNodes elseBody
 
   /-- Render an each loop -/
-  partial def renderEach (name : String) (body : List Node) (elseBody : List Node) (_pos : Position) : RenderM Html := do
+  partial def renderEach (config : EachConfig) (body : List Node) (elseBody : List Node) (_pos : Position) : RenderM Html := do
     let ctx ← getContext
-    match ctx.lookup name with
+    match ctx.lookup config.source with
     | some (.array items) =>
       if items.isEmpty then
         renderNodes elseBody
@@ -145,12 +145,113 @@ mutual
             index := idx
             first := idx == 0
             last := idx == size - 1
+            length := size
           }
-          let childCtx := ctx.pushScope item loopInfo
+          -- Handle named variables: {{#each items as |item idx|}}
+          let itemData := match config.itemVar, config.indexVar with
+            | some itemName, some idxName =>
+              -- Both named: create object with both
+              Value.object #[(itemName, item), (idxName, .int idx)]
+            | some itemName, none =>
+              -- Just item named
+              Value.object #[(itemName, item)]
+            | none, _ =>
+              -- Default: item becomes context
+              item
+          let childCtx := ctx.pushScope itemData loopInfo
+          withContext childCtx (renderNodes body)
+        return .fragment htmlArr.toList
+    | some (.object pairs) =>
+      -- Object iteration: iterate over key-value pairs
+      if pairs.isEmpty then
+        renderNodes elseBody
+      else
+        let size := pairs.size
+        let htmlArr ← pairs.mapIdxM fun idx (key, value) => do
+          let loopInfo : LoopMeta := {
+            index := idx
+            first := idx == 0
+            last := idx == size - 1
+            length := size
+            key := some key
+          }
+          let itemData := match config.itemVar with
+            | some itemName => Value.object #[(itemName, value)]
+            | none => value
+          let childCtx := ctx.pushScope itemData loopInfo
           withContext childCtx (renderNodes body)
         return .fragment htmlArr.toList
     | _ =>
       renderNodes elseBody
+
+  /-- Render a with block -/
+  partial def renderWith (path : String) (body : List Node) (elseBody : List Node) (_pos : Position) : RenderM Html := do
+    let ctx ← getContext
+    match ctx.lookup path with
+    | some v =>
+      if v.isTruthy then
+        let childCtx := ctx.pushSectionScope v
+        withContext childCtx (renderNodes body)
+      else
+        renderNodes elseBody
+    | none =>
+      renderNodes elseBody
+
+  /-- Render a let block -/
+  partial def renderLet (bindings : List (String × Expr)) (body : List Node) (_pos : Position) : RenderM Html := do
+    let ctx ← getContext
+    -- Evaluate all bindings
+    let values ← bindings.mapM fun (name, expr) => do
+      let v ← evalExpr expr
+      return (name, v)
+    let bindingsData := Value.object values.toArray
+    let childCtx := ctx.mergeData bindingsData
+    withContext childCtx (renderNodes body)
+
+  /-- Render a repeat block -/
+  partial def renderRepeat (countExpr : Expr) (body : List Node) (_pos : Position) : RenderM Html := do
+    let ctx ← getContext
+    let countVal ← evalExpr countExpr
+    let count := match countVal with
+      | .int n => if n > 0 then n.toNat else 0
+      | _ => 0
+    if count == 0 then
+      return .fragment []
+    else
+      let htmls ← (List.range count).mapM fun idx => do
+        let loopInfo : LoopMeta := {
+          index := idx
+          first := idx == 0
+          last := idx == count - 1
+          length := count
+        }
+        let childCtx := ctx.pushScope (.int idx) loopInfo
+        withContext childCtx (renderNodes body)
+      return .fragment htmls
+
+  /-- Render a range block -/
+  partial def renderRange (startExpr : Expr) (endExpr : Expr) (body : List Node) (_pos : Position) : RenderM Html := do
+    let ctx ← getContext
+    let startVal ← evalExpr startExpr
+    let endVal ← evalExpr endExpr
+    let (startN, endN) := match startVal, endVal with
+      | .int s, .int e => (s, e)
+      | _, _ => (0, 0)
+    if startN >= endN then
+      return .fragment []
+    else
+      let count := (endN - startN).toNat
+      let htmls ← (List.range count).mapM fun (offset : Nat) => do
+        let idx := startN + offset
+        let loopInfo : LoopMeta := {
+          index := offset
+          first := offset == 0
+          last := offset == count - 1
+          length := count
+        }
+        let childCtx := ctx.pushScope (.int idx) loopInfo
+        withContext childCtx (renderNodes body)
+      return .fragment htmls
 
   /-- Render a partial with optional parameters -/
   partial def renderPartial (name : String) (params : List (String × Expr)) (pos : Position) : RenderM Html := do
@@ -219,7 +320,11 @@ mutual
     | .comment _ => return .fragment []  -- Comments produce no output
     | .variable ref => renderVariable ref
     | .conditional branches elseBody inverted pos => renderConditional branches elseBody inverted pos
-    | .each name body elseBody pos => renderEach name body elseBody pos
+    | .each config body elseBody pos => renderEach config body elseBody pos
+    | .«with» path body elseBody pos => renderWith path body elseBody pos
+    | .«let» bindings body pos => renderLet bindings body pos
+    | .repeat count body pos => renderRepeat count body pos
+    | .range start «end» body pos => renderRange start «end» body pos
     | .«partial» name params pos => renderPartial name params pos
     | .partialBlock name params body pos => renderPartialBlock name params body pos
     | .extends _ _ => return .fragment []  -- Handled at template level
