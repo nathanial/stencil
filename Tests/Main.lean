@@ -436,6 +436,220 @@ test "Custom filter overrides builtin" := do
   let result ← shouldBeOk (render tmpl ctx) "rendering"
   result.render ≡ "HELLO!"
 
+-- Expression Tests
+
+test "Expr: equality comparison ==" := do
+  let tmpl ← shouldBeOk (parse "{{#if status == \"active\"}}yes{{/if}}") "parsing"
+  let ctx := context [("status", .string "active")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "yes"
+
+test "Expr: equality comparison - false" := do
+  let tmpl ← shouldBeOk (parse "{{#if status == \"active\"}}yes{{else}}no{{/if}}") "parsing"
+  let ctx := context [("status", .string "inactive")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "no"
+
+test "Expr: not equal !=" := do
+  let tmpl ← shouldBeOk (parse "{{#if count != 0}}has items{{/if}}") "parsing"
+  let ctx := context [("count", .int 5)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "has items"
+
+test "Expr: greater than >" := do
+  let tmpl ← shouldBeOk (parse "{{#if age > 18}}adult{{else}}minor{{/if}}") "parsing"
+  let ctx := context [("age", .int 21)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "adult"
+
+test "Expr: less than <" := do
+  let tmpl ← shouldBeOk (parse "{{#if temp < 0}}freezing{{else}}ok{{/if}}") "parsing"
+  let ctx := context [("temp", .int (-5))]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "freezing"
+
+test "Expr: greater or equal >=" := do
+  let tmpl ← shouldBeOk (parse "{{#if score >= 90}}A{{else}}B{{/if}}") "parsing"
+  let ctx := context [("score", .int 90)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "A"
+
+test "Expr: less or equal <=" := do
+  let tmpl ← shouldBeOk (parse "{{#if count <= 0}}empty{{else}}ok{{/if}}") "parsing"
+  let ctx := context [("count", .int 0)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "empty"
+
+test "Expr: logical AND &&" := do
+  let tmpl ← shouldBeOk (parse "{{#if active && verified}}ok{{else}}no{{/if}}") "parsing"
+  let ctx := context [("active", .bool true), ("verified", .bool true)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "ok"
+
+test "Expr: logical AND - short circuit" := do
+  let tmpl ← shouldBeOk (parse "{{#if active && verified}}ok{{else}}no{{/if}}") "parsing"
+  let ctx := context [("active", .bool false), ("verified", .bool true)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "no"
+
+test "Expr: logical OR ||" := do
+  let tmpl ← shouldBeOk (parse "{{#if admin || moderator}}allowed{{/if}}") "parsing"
+  let ctx := context [("admin", .bool false), ("moderator", .bool true)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "allowed"
+
+test "Expr: logical NOT !" := do
+  let tmpl ← shouldBeOk (parse "{{#if !disabled}}enabled{{/if}}") "parsing"
+  let ctx := context [("disabled", .bool false)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "enabled"
+
+test "Expr: boolean literal true" := do
+  let tmpl ← shouldBeOk (parse "{{#if true}}always{{/if}}") "parsing"
+  let ctx := Context.empty
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "always"
+
+test "Expr: boolean literal false" := do
+  let tmpl ← shouldBeOk (parse "{{#if false}}never{{else}}ok{{/if}}") "parsing"
+  let ctx := Context.empty
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "ok"
+
+test "Expr: integer literal" := do
+  let tmpl ← shouldBeOk (parse "{{#if count > 10}}many{{else}}few{{/if}}") "parsing"
+  let ctx := context [("count", .int 5)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "few"
+
+test "Expr: float comparison" := do
+  let tmpl ← shouldBeOk (parse "{{#if temp > 98.6}}fever{{else}}ok{{/if}}") "parsing"
+  let ctx := context [("temp", .float 99.5)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "fever"
+
+test "Expr: complex expression" := do
+  let tmpl ← shouldBeOk (parse "{{#if (age >= 18 && verified) || admin}}allowed{{/if}}") "parsing"
+  let ctx := context [("age", .int 16), ("verified", .bool true), ("admin", .bool true)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "allowed"
+
+test "Expr: else if chain" := do
+  let tmpl ← shouldBeOk (parse "{{#if x == 1}}one{{else if x == 2}}two{{else}}other{{/if}}") "parsing"
+  let ctx := context [("x", .int 2)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "two"
+
+test "Expr: else if chain - first branch" := do
+  let tmpl ← shouldBeOk (parse "{{#if x == 1}}one{{else if x == 2}}two{{else}}other{{/if}}") "parsing"
+  let ctx := context [("x", .int 1)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "one"
+
+test "Expr: else if chain - else branch" := do
+  let tmpl ← shouldBeOk (parse "{{#if x == 1}}one{{else if x == 2}}two{{else}}other{{/if}}") "parsing"
+  let ctx := context [("x", .int 3)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "other"
+
+test "Expr: multiple else if" := do
+  let tmpl ← shouldBeOk (parse "{{#if grade >= 90}}A{{else if grade >= 80}}B{{else if grade >= 70}}C{{else}}F{{/if}}") "parsing"
+  let ctx := context [("grade", .int 75)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "C"
+
+test "Expr: int-float comparison" := do
+  let tmpl ← shouldBeOk (parse "{{#if x == 5.0}}equal{{else}}not{{/if}}") "parsing"
+  let ctx := context [("x", .int 5)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "equal"
+
+-- Template Composition Tests
+
+test "Partial with string param" := do
+  let cardTmpl ← shouldBeOk (parse "<div>{{title}}</div>") "parsing card"
+  let mainTmpl ← shouldBeOk (parse "{{> card title=\"Hello\"}}") "parsing main"
+  let ctx := Context.empty.addPartial "card" cardTmpl
+  let result ← shouldBeOk (render mainTmpl ctx) "rendering"
+  result.render ≡ "<div>Hello</div>"
+
+test "Partial with variable param" := do
+  let cardTmpl ← shouldBeOk (parse "<span>{{name}}</span>") "parsing card"
+  let mainTmpl ← shouldBeOk (parse "{{> card name=user}}") "parsing main"
+  let ctx := context [("user", .string "Alice")]
+    |>.addPartial "card" cardTmpl
+  let result ← shouldBeOk (render mainTmpl ctx) "rendering"
+  result.render ≡ "<span>Alice</span>"
+
+test "Partial with multiple params" := do
+  let cardTmpl ← shouldBeOk (parse "{{name}} ({{role}})") "parsing card"
+  let mainTmpl ← shouldBeOk (parse "{{> card name=\"Bob\" role=\"Admin\"}}") "parsing main"
+  let ctx := Context.empty.addPartial "card" cardTmpl
+  let result ← shouldBeOk (render mainTmpl ctx) "rendering"
+  result.render ≡ "Bob (Admin)"
+
+test "Partial params override context" := do
+  let cardTmpl ← shouldBeOk (parse "{{title}}") "parsing card"
+  let mainTmpl ← shouldBeOk (parse "{{> card title=\"Override\"}}") "parsing main"
+  let ctx := context [("title", .string "Original")]
+    |>.addPartial "card" cardTmpl
+  let result ← shouldBeOk (render mainTmpl ctx) "rendering"
+  result.render ≡ "Override"
+
+test "Partial block basic" := do
+  let layoutTmpl ← shouldBeOk (parse "<main>{{{@partialBlock}}}</main>") "parsing layout"
+  let mainTmpl ← shouldBeOk (parse "{{#> layout}}<h1>Content</h1>{{/layout}}") "parsing main"
+  let ctx := Context.empty.addPartial "layout" layoutTmpl
+  let result ← shouldBeOk (render mainTmpl ctx) "rendering"
+  result.render ≡ "<main><h1>Content</h1></main>"
+
+test "Partial block with params" := do
+  let layoutTmpl ← shouldBeOk (parse "<div class=\"{{class}}\">{{{@partialBlock}}}</div>") "parsing layout"
+  let mainTmpl ← shouldBeOk (parse "{{#> layout class=\"container\"}}Hello{{/layout}}") "parsing main"
+  let ctx := Context.empty.addPartial "layout" layoutTmpl
+  let result ← shouldBeOk (render mainTmpl ctx) "rendering"
+  result.render ≡ "<div class=\"container\">Hello</div>"
+
+test "Block renders default content" := do
+  let tmpl ← shouldBeOk (parse "{{#block \"main\"}}Default{{/block}}") "parsing"
+  let ctx := Context.empty
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "Default"
+
+test "Block with quoted name" := do
+  let tmpl ← shouldBeOk (parse "{{#block \"content\"}}Body{{/block}}") "parsing"
+  let ctx := Context.empty
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "Body"
+
+test "Extends basic" := do
+  let baseTmpl ← shouldBeOk (parse "<html>{{#block \"body\"}}Default{{/block}}</html>") "parsing base"
+  let childTmpl ← shouldBeOk (parse "{{#extends \"base\"}}{{#block \"body\"}}Custom{{/block}}") "parsing child"
+  let ctx := Context.empty.addPartial "base" baseTmpl
+  let result ← shouldBeOk (render childTmpl ctx) "rendering"
+  result.render ≡ "<html>Custom</html>"
+
+test "Extends uses default when no override" := do
+  let baseTmpl ← shouldBeOk (parse "{{#block \"head\"}}Head{{/block}}|{{#block \"body\"}}Body{{/block}}") "parsing base"
+  let childTmpl ← shouldBeOk (parse "{{#extends \"base\"}}{{#block \"body\"}}MyBody{{/block}}") "parsing child"
+  let ctx := Context.empty.addPartial "base" baseTmpl
+  let result ← shouldBeOk (render childTmpl ctx) "rendering"
+  result.render ≡ "Head|MyBody"
+
+test "Extends with super" := do
+  let baseTmpl ← shouldBeOk (parse "{{#block \"nav\"}}Home{{/block}}") "parsing base"
+  let childTmpl ← shouldBeOk (parse "{{#extends \"base\"}}{{#block \"nav\"}}{{#super}} | About{{/block}}") "parsing child"
+  let ctx := Context.empty.addPartial "base" baseTmpl
+  let result ← shouldBeOk (render childTmpl ctx) "rendering"
+  result.render ≡ "Home | About"
+
+test "Extends multiple blocks" := do
+  let baseTmpl ← shouldBeOk (parse "<head>{{#block \"title\"}}Title{{/block}}</head><body>{{#block \"content\"}}Content{{/block}}</body>") "parsing base"
+  let childTmpl ← shouldBeOk (parse "{{#extends \"base\"}}{{#block \"title\"}}My Page{{/block}}{{#block \"content\"}}Hello{{/block}}") "parsing child"
+  let ctx := Context.empty.addPartial "base" baseTmpl
+  let result ← shouldBeOk (render childTmpl ctx) "rendering"
+  result.render ≡ "<head>My Page</head><body>Hello</body>"
+
 #generate_tests
 
 end Stencil.Tests

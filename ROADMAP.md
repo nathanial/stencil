@@ -27,19 +27,24 @@ Future improvements and features for the Stencil template engine.
 - [x] Filter validation and error handling
 - [ ] Filter documentation/introspection (future)
 
-## v0.2.0 - Conditional Expressions
+## v0.2.0 - Conditional Expressions ✅
 
 ### Expression Support
-- [ ] Comparison operators in conditions: `{{#if count > 0}}`
-- [ ] Logical operators: `{{#if active && visible}}`
-- [ ] Negation: `{{#if !hidden}}`
-- [ ] Equality checks: `{{#if status == "active"}}`
-- [ ] Numeric comparisons: `{{#if age >= 18}}`
+- [x] Comparison operators in conditions: `{{#if count > 0}}`
+- [x] Logical operators: `{{#if active && visible}}`
+- [x] Negation: `{{#if !hidden}}`
+- [x] Equality checks: `{{#if status == "active"}}`
+- [x] Numeric comparisons: `{{#if age >= 18}}`
+- [x] Boolean literals: `{{#if true}}`, `{{#if false}}`
+- [x] String literals: `{{#if status == "active"}}`
+- [x] Numeric literals: `{{#if count > 10}}`, `{{#if temp > 98.6}}`
+- [x] Parenthesized expressions: `{{#if (a && b) || c}}`
+- [x] Cross-type comparison (int/float)
 
 ### Enhanced Conditionals
-- [ ] `{{else if condition}}` chains
-- [ ] `{{#switch}}` / `{{#case}}` blocks
-- [ ] Inline conditionals: `{{if condition then "yes" else "no"}}`
+- [x] `{{else if condition}}` chains
+- [ ] `{{#switch}}` / `{{#case}}` blocks (future)
+- [ ] Inline conditionals: `{{if condition then "yes" else "no"}}` (future)
 
 ## v0.3.0 - Whitespace Control
 
@@ -64,18 +69,18 @@ Future improvements and features for the Stencil template engine.
 - [ ] `{{@length}}` for array length
 - [ ] `{{else}}` for empty arrays (already supported)
 
-## v0.5.0 - Template Composition
+## v0.5.0 - Template Composition ✅
 
 ### Template Inheritance
-- [ ] `{{#extends "base"}}` - Extend parent template
-- [ ] `{{#block "content"}}...{{/block}}` - Define blocks
-- [ ] `{{#super}}` - Call parent block
+- [x] `{{#extends "base"}}` - Extend parent template
+- [x] `{{#block "content"}}...{{/block}}` - Define blocks
+- [x] `{{#super}}` - Call parent block
 
 ### Partial Enhancements
-- [ ] Partial parameters: `{{> card title="Hello"}}`
-- [ ] Dynamic partials: `{{> (lookup templates type)}}`
-- [ ] Inline partials: `{{#*inline "myPartial"}}...{{/inline}}`
-- [ ] Partial blocks: `{{#> layout}}content{{/layout}}`
+- [x] Partial parameters: `{{> card title="Hello"}}`
+- [ ] Dynamic partials: `{{> (lookup templates type)}}` (future)
+- [ ] Inline partials: `{{#*inline "myPartial"}}...{{/inline}}` (future)
+- [x] Partial blocks: `{{#> layout}}content{{/layout}}`
 
 ## v0.6.0 - Error Handling & Debugging ✅
 
