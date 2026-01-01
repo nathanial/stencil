@@ -22,3 +22,9 @@ lean_lib Tests where
 @[test_driver]
 lean_exe stencil_tests where
   root := `Tests.Main
+
+lean_lib Bench where
+  roots := #[`Bench]
+
+lean_exe stencil_bench where
+  root := `Bench.Main

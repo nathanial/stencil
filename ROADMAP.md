@@ -106,7 +106,7 @@ Future improvements and features for the Stencil template engine.
 ### Optimization
 - [ ] String builder for render output
 - [ ] Avoid intermediate allocations
-- [ ] Benchmark suite
+- [x] Benchmark suite (`lake exe stencil_bench`)
 
 ## v0.8.0 - Integration
 
