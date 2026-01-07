@@ -1,82 +1,61 @@
 /-
   Stencil.Parser.State
-  Parser state and monad definition
+  Parser state and monad definition using Sift parser combinators
 -/
-import Stencil.Core.Error
+import Sift
+import Stencil.Core.Position
 
 namespace Stencil.Parser
 
-/-- Parser state tracking position in template input -/
-structure ParserState where
-  input : String
-  pos : Nat := 0
-  line : Nat := 1
-  column : Nat := 1
+open Stencil (Position)
+
+/-- Stencil-specific parser state (carried as Sift user state) -/
+structure StencilState where
   tagStack : List String := []
   trimNextLeading : Bool := false  -- For whitespace control: trim leading whitespace from next text
   deriving Repr
 
-/-- Parser monad combining state and error handling -/
-abbrev Parser := ExceptT ParseError (StateM ParserState)
+/-- Parser monad using Sift with StencilState as user state -/
+abbrev Parser := Sift.Parser StencilState
 
 namespace Parser
 
+open Sift
+
 /-- Get current position as Position struct -/
-def getPosition : Parser Position := do
-  let s ← get
-  return { offset := s.pos, line := s.line, column := s.column }
+def getPosition : Parser Position := Sift.Parser.position
 
 /-- Check if at end of input -/
-def atEnd : Parser Bool := do
-  let s ← get
-  return s.input.atEnd ⟨s.pos⟩
+def atEnd : Parser Bool := Sift.atEnd
 
 /-- Peek at current character without consuming -/
-def peek? : Parser (Option Char) := do
-  let s ← get
-  let p : String.Pos := ⟨s.pos⟩
-  if s.input.atEnd p then
-    return none
-  else
-    return some (s.input.get p)
+def peek? : Parser (Option Char) := Sift.peek
 
 /-- Peek at current character, error if at end -/
-def peek : Parser Char := do
-  match ← peek? with
-  | some c => return c
-  | none => throw (.unexpectedEnd "input")
+def peekOrFail : Parser Char := do
+  match ← Sift.peek with
+  | some c => pure c
+  | none => Sift.Parser.fail "unexpected end of input"
 
-/-- Consume and return current character, updating line/column -/
-def next : Parser Char := do
-  let s ← get
-  let p : String.Pos := ⟨s.pos⟩
-  if s.input.atEnd p then
-    throw (.unexpectedEnd "input")
-  let c := s.input.get p
-  let nextP := s.input.next p  -- Correctly advances by char's byte length
-  let (newLine, newCol) :=
-    if c == '\n' then (s.line + 1, 1)
-    else (s.line, s.column + 1)
-  set { s with pos := nextP.byteIdx, line := newLine, column := newCol }
-  return c
+/-- Consume and return current character -/
+def next : Parser Char := Sift.anyChar
 
 /-- Try to consume a specific character -/
 def tryChar (c : Char) : Parser Bool := do
-  match ← peek? with
+  match ← Sift.peek with
   | some x =>
     if x == c then
-      let _ ← next
-      return true
+      let _ ← Sift.anyChar
+      pure true
     else
-      return false
-  | none => return false
+      pure false
+  | none => pure false
 
 /-- Expect and consume a specific character -/
 def expect (expected : Char) : Parser Unit := do
-  let pos ← getPosition
-  let c ← next
+  let c ← Sift.anyChar
   if c != expected then
-    throw (.unexpectedChar pos c s!"'{expected}'")
+    Sift.Parser.fail s!"expected '{expected}', got '{c}'"
 
 /-- Expect and consume a specific string -/
 def expectString (expected : String) : Parser Unit := do
@@ -85,60 +64,64 @@ def expectString (expected : String) : Parser Unit := do
 
 /-- Peek ahead n characters without consuming -/
 def peekString (n : Nat) : Parser String := do
-  let s ← get
-  let mut p : String.Pos := ⟨s.pos⟩
-  for _ in [:n] do
-    if s.input.atEnd p then break
-    p := s.input.next p
-  return s.input.extract ⟨s.pos⟩ p
+  let s ← Sift.Parser.get
+  let input := s.input
+  let pos := s.pos
+  let mut endPos := pos
+  let mut count := 0
+  while count < n && endPos < input.length do
+    endPos := endPos + 1
+    count := count + 1
+  pure (String.Pos.Raw.extract input ⟨pos⟩ ⟨endPos⟩)
 
 /-- Try to match and consume a string -/
 def tryString (expected : String) : Parser Bool := do
   let ahead ← peekString expected.length
   if ahead == expected then
     for _ in expected.toList do
-      let _ ← next
-    return true
+      let _ ← Sift.anyChar
+    pure true
   else
-    return false
+    pure false
 
 /-- Push a tag onto the open tag stack -/
-def pushTag (tag : String) : Parser Unit := do
-  modify fun s => { s with tagStack := tag :: s.tagStack }
+def pushTag (tag : String) : Parser Unit :=
+  Sift.Parser.modifyUserState fun s => { s with tagStack := tag :: s.tagStack }
 
 /-- Pop a tag from the stack, returning it -/
 def popTag : Parser (Option String) := do
-  let s ← get
-  match s.tagStack with
-  | [] => return none
+  let st ← Sift.Parser.getUserState
+  match st.tagStack with
+  | [] => pure none
   | t :: rest =>
-    set { s with tagStack := rest }
-    return some t
+    Sift.Parser.setUserState { st with tagStack := rest }
+    pure (some t)
 
 /-- Peek at the current open tag -/
 def currentTag : Parser (Option String) := do
-  let s ← get
-  return s.tagStack.head?
+  let st ← Sift.Parser.getUserState
+  pure st.tagStack.head?
 
 /-- Get the trimNextLeading flag -/
 def getTrimNext : Parser Bool := do
-  let s ← get
-  return s.trimNextLeading
+  let st ← Sift.Parser.getUserState
+  pure st.trimNextLeading
 
 /-- Set the trimNextLeading flag -/
-def setTrimNext (v : Bool) : Parser Unit := do
-  modify fun s => { s with trimNextLeading := v }
+def setTrimNext (v : Bool) : Parser Unit :=
+  Sift.Parser.modifyUserState fun s => { s with trimNextLeading := v }
 
 /-- Run parser on input, returning result -/
-def run {α : Type} (p : Parser α) (input : String) : ParseResult α :=
-  let initState : ParserState := { input := input }
-  let (result, _) := (ExceptT.run p).run initState
-  result
+def run {α : Type} (p : Parser α) (input : String) : Except Sift.ParseError α :=
+  Sift.Parser.runWith p input {}
 
 /-- Run parser on input, returning result and final state -/
-def runWithState {α : Type} (p : Parser α) (input : String) : ParseResult α × ParserState :=
-  let initState : ParserState := { input := input }
-  (ExceptT.run p).run initState
+def runWithState {α : Type} (p : Parser α) (input : String) : Except Sift.ParseError α × Sift.ParseState StencilState :=
+  -- Note: this returns a different result type than before
+  let init : Sift.ParseState StencilState := Sift.ParseState.init input {}
+  match p init with
+  | .ok (a, s) => (.ok a, s)
+  | .error e => (.error e, init)
 
 end Parser
 

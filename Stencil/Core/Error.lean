@@ -2,36 +2,11 @@
   Stencil.Core.Error
   Parse and render error types with source context and suggestions
 -/
+import Sift
 import Stencil.Core.Position
 import Stencil.Core.Suggest
 
 namespace Stencil
-
-/-- Errors that can occur during template parsing -/
-inductive ParseError where
-  | unexpectedChar (pos : Position) (char : Char) (expected : String)
-  | unexpectedEnd (context : String)
-  | unmatchedTag (pos : Position) (found : String) (expected : Option String)
-  | invalidTagSyntax (pos : Position) (msg : String)
-  | invalidFilter (pos : Position) (name : String)
-  | emptyPath (pos : Position)
-  | other (pos : Position) (msg : String)
-  deriving Repr, BEq
-
-instance : ToString ParseError where
-  toString
-    | .unexpectedChar pos c exp => s!"Parse error at {pos}: unexpected '{c}', expected {exp}"
-    | .unexpectedEnd ctx => s!"Parse error: unexpected end of input in {ctx}"
-    | .unmatchedTag pos found exp =>
-      let lb := "{{"
-      let rb := "}}"
-      match exp with
-      | some e => s!"Parse error at {pos}: unmatched tag '{lb}/{found}{rb}', expected '{lb}/{e}{rb}'"
-      | none => s!"Parse error at {pos}: unexpected closing tag '{lb}/{found}{rb}'"
-    | .invalidTagSyntax pos msg => s!"Parse error at {pos}: {msg}"
-    | .invalidFilter pos name => s!"Parse error at {pos}: invalid filter '{name}'"
-    | .emptyPath pos => s!"Parse error at {pos}: empty variable path"
-    | .other pos msg => s!"Parse error at {pos}: {msg}"
 
 /-- Errors that can occur during template rendering -/
 inductive RenderError where
@@ -64,8 +39,8 @@ instance : ToString RenderError where
       s!"Render error{posStr} in {ctx}: expected {exp}, got {got}"
     | .other msg => s!"Render error: {msg}"
 
-/-- Result type for parsing -/
-abbrev ParseResult (α : Type) := Except ParseError α
+/-- Result type for parsing (uses Sift.ParseError) -/
+abbrev ParseResult (α : Type) := Except Sift.ParseError α
 
 /-- Result type for rendering -/
 abbrev RenderResult (α : Type) := Except RenderError α
@@ -106,22 +81,12 @@ def sourceContext (input : String) (pos : Position) (contextLines : Nat := 1) : 
     ""
 
 /-- Format a parse error with source context -/
-def ParseError.format (err : ParseError) (input : String) : String :=
-  let getPos : Option Position := match err with
-    | .unexpectedChar pos _ _ => some pos
-    | .unexpectedEnd _ => none
-    | .unmatchedTag pos _ _ => some pos
-    | .invalidTagSyntax pos _ => some pos
-    | .invalidFilter pos _ => some pos
-    | .emptyPath pos => some pos
-    | .other pos _ => some pos
-  match getPos with
-  | some pos =>
-    let ctx := sourceContext input pos
-    let errMsg := toString err
-    if ctx.isEmpty then errMsg
-    else s!"{errMsg}\n\n{ctx}"
-  | none => toString err
+def formatParseError (err : Sift.ParseError) (input : String) : String :=
+  let pos := err.pos
+  let ctx := sourceContext input pos
+  let errMsg := toString err
+  if ctx.isEmpty then errMsg
+  else s!"{errMsg}\n\n{ctx}"
 
 /-- Format a render error with source context -/
 def RenderError.format (err : RenderError) (input : String) : String :=

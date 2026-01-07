@@ -76,8 +76,8 @@ def withFilter (ctx : Context) (name : String) (fn : FilterFn) : Context :=
   ctx.addFilter name fn
 
 /-- Format a parse error with source context for display -/
-def formatParseError (err : ParseError) (input : String) : String :=
-  ParseError.format err input
+def formatParseError' (err : Sift.ParseError) (input : String) : String :=
+  Stencil.formatParseError err input
 
 /-- Format a render error with source context for display -/
 def formatRenderError (err : RenderError) (input : String) : String :=
@@ -90,7 +90,7 @@ def compileWithErrors (input : String) (ctx : Context) : Except String Scribe.Ht
     match render tmpl ctx with
     | .ok html => .ok html
     | .error e => .error (formatRenderError e input)
-  | .error e => .error (formatParseError e input)
+  | .error e => .error (formatParseError' e input)
 
 /-- Template engine with caching support -/
 structure Engine where

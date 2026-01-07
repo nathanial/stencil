@@ -1,18 +1,20 @@
 /-
   Stencil.Parser.Parse
-  Template parsing
+  Template parsing using Sift parser combinators
 -/
 import Stencil.Parser.Primitives
 import Stencil.AST.Types
 
 namespace Stencil.Parser
 
+open Sift
+
 /-- Parse filter arguments (quoted strings after filter name) -/
 def parseFilterArgs : Parser (List String) := do
   let mut args := []
   skipWhitespace
   while true do
-    match ← Parser.peek? with
+    match ← peek with
     | some '"' | some '\'' =>
       let arg ← parseQuotedString
       args := args ++ [arg]
@@ -58,14 +60,14 @@ def isTrimMarker (c : Char) : Bool := c == '~' || c == '-'
 
 /-- Try to consume a trim marker at start of tag -/
 def tryTrimStart : Parser Bool := do
-  match ← Parser.peek? with
-  | some c => if isTrimMarker c then let _ ← Parser.next; return true else return false
+  match ← peek with
+  | some c => if isTrimMarker c then let _ ← anyChar; return true else return false
   | none => return false
 
 /-- Try to consume a trim marker before closing delimiter -/
 def tryTrimEnd : Parser Bool := do
-  match ← Parser.peek? with
-  | some c => if isTrimMarker c then let _ ← Parser.next; return true else return false
+  match ← peek with
+  | some c => if isTrimMarker c then let _ ← anyChar; return true else return false
   | none => return false
 
 /-- Parse a comment: `{{! ... }}` -/
@@ -88,13 +90,13 @@ def parseCloseTag : Parser String := do
 /-- Parse text content until a tag or end -/
 partial def parseText : Parser (Option Node) := do
   -- Track start position for efficient substring extraction
-  let s ← get
+  let s ← Sift.Parser.get
   let startPos := s.pos
   while true do
     if ← Parser.atEnd then break
     if ← checkOpenDelim then break
-    let _ ← Parser.next
-  let s' ← get
+    let _ ← anyChar
+  let s' ← Sift.Parser.get
   let endPos := s'.pos
   if startPos == endPos then
     return none
@@ -130,8 +132,7 @@ private def parseNumber : Parser Expr := do
     match numStr.toInt? with
     | some n => return .intLit n
     | none =>
-      let pos ← Parser.getPosition
-      throw (ParseError.other pos s!"invalid number: {numStr}")
+      Sift.Parser.fail s!"invalid number: {numStr}"
 
 /-- Parse a string literal -/
 private def parseStringLit : Parser Expr := do
@@ -157,10 +158,10 @@ private def parseCompareOp : Parser (Option CompareOp) := do
   else
     match ahead.get? ⟨0⟩ with
     | some '<' =>
-      let _ ← Parser.next
+      let _ ← anyChar
       return some .lt
     | some '>' =>
-      let _ ← Parser.next
+      let _ ← anyChar
       return some .gt
     | _ => return none
 
@@ -169,37 +170,35 @@ mutual
   /-- Parse an atom (variable, literal, or parenthesized expression) -/
   partial def parseAtom : Parser Expr := do
     skipWhitespace
-    match ← Parser.peek? with
+    match ← peek with
     | some '"' | some '\'' =>
       parseStringLit
     | some c =>
       if c.isDigit || c == '-' then
         parseNumber
       else if c == '(' then
-        let _ ← Parser.next  -- consume '('
+        let _ ← anyChar  -- consume '('
         let expr ← parseOr
         skipWhitespace
-        match ← Parser.peek? with
-        | some ')' => let _ ← Parser.next
+        match ← peek with
+        | some ')' => let _ ← anyChar
         | _ =>
-          let pos ← Parser.getPosition
-          throw (ParseError.other pos "expected ')'")
+          Sift.Parser.fail "expected ')'"
         return expr
       else if c == '!' then
-        let _ ← Parser.next
+        let _ ← anyChar
         let inner ← parseAtom
         return .not inner
       else
         -- Variable or keyword
         let name ← readWhile isPathChar
         if name.isEmpty then
-          let pos ← Parser.getPosition
-          throw (.unexpectedChar pos c "expression")
+          Sift.Parser.fail s!"unexpected '{c}', expected expression"
         match name with
         | "true" => return .boolLit true
         | "false" => return .boolLit false
         | _ => return .var name
-    | none => throw (.unexpectedEnd "expression")
+    | none => Sift.Parser.fail "unexpected end of input in expression"
 
   /-- Parse comparison expression: `a == b`, `a > b`, etc. -/
   partial def parseComparison : Parser Expr := do
@@ -254,7 +253,7 @@ def parsePartialParams : Parser (List (String × Expr)) := do
   let mut params : List (String × Expr) := []
   while true do
     skipWhitespace
-    match ← Parser.peek? with
+    match ← peek with
     | some '}' => break
     | some c =>
       if isIdentChar c then
@@ -316,7 +315,7 @@ mutual
       | some "else" =>
         -- Check if it's {{else if ...}} or just {{else}}
         -- We need to peek ahead to see if there's an "if"
-        let s ← get
+        let s ← Sift.Parser.get
         skipWhitespace
         let maybeIf ← readWhile Char.isAlpha
         if maybeIf == "if" then
@@ -326,7 +325,7 @@ mutual
           let _ ← Parser.tryString "}}"
         else
           -- It's just else, restore state and parse else body
-          set s
+          Sift.Parser.set s
           let (elsePart, _) ← parseNodes [tagName]
           elseBody := elsePart
           done := true
@@ -407,7 +406,7 @@ mutual
           let item ← readWhile1 isIdentChar "item variable"
           skipWhitespace
           let idx ← do
-            match ← Parser.peek? with
+            match ← peek with
             | some c =>
               if isIdentChar c then
                 let i ← readWhile1 isIdentChar "index variable"
@@ -518,7 +517,7 @@ mutual
       if argTrimmed.isEmpty then
         let lb := "{{"
         let rb := "}}"
-        throw (.invalidTagSyntax startPos s!"{lb}#{other}{rb} requires an argument")
+        Sift.Parser.fail s!"{lb}#{other}{rb} requires an argument"
 
       Parser.pushTag other
       let (body, foundTag) ← parseNodes ["else", other]
@@ -545,7 +544,7 @@ mutual
       skipWhitespace
       let trimAfter ← tryTrimEnd
       if !(← Parser.tryString "}}}") then
-        throw (.invalidTagSyntax pos "expected closing }}}")
+        Sift.Parser.fail "expected closing }}}"
       if trimAfter then Parser.setTrimNext true
       return (.variable ref, trimBefore)
 
@@ -557,10 +556,10 @@ mutual
     skipWhitespace
 
     -- Peek at next char to determine tag type
-    match ← Parser.peek? with
+    match ← peek with
     | some '!' =>
       -- Comment: {{! ... }}
-      let _ ← Parser.next
+      let _ ← anyChar
       let content ← readUntil "}}"
       -- Check for trim marker before }}
       let trimAfter := content.endsWith "~" || content.endsWith "-"
@@ -571,7 +570,7 @@ mutual
 
     | some '#' =>
       -- Section open - check for partial block {{#>}}
-      let _ ← Parser.next
+      let _ ← anyChar
       if ← Parser.tryChar '>' then
         -- Partial block: {{#> name}}...{{/name}}
         skipWhitespace
@@ -591,13 +590,14 @@ mutual
 
     | some '/' =>
       -- Close tag - this is an error at top level
-      let _ ← Parser.next
+      let _ ← anyChar
       let name ← parseCloseTag
-      throw (.unmatchedTag pos name none)
+      Sift.Parser.fail ("unexpected closing tag '{{/" ++ name ++ "}}'")
+
 
     | some '>' =>
       -- Partial
-      let _ ← Parser.next
+      let _ ← anyChar
       skipWhitespace
       let name ← readWhile1 isPartialNameChar "partial name"
       let params ← parsePartialParams
@@ -609,13 +609,13 @@ mutual
 
     | some '&' =>
       -- Unescaped variable (alternative syntax)
-      let _ ← Parser.next
+      let _ ← anyChar
       skipWhitespace
       let ref ← parseVarRef false pos
       skipWhitespace
       let trimAfter ← tryTrimEnd
       if !(← Parser.tryString "}}") then
-        throw (.invalidTagSyntax pos "expected closing }}")
+        Sift.Parser.fail "expected closing }}"
       if trimAfter then Parser.setTrimNext true
       return (.variable ref, trimBefore)
 
@@ -625,12 +625,12 @@ mutual
       skipWhitespace
       let trimAfter ← tryTrimEnd
       if !(← Parser.tryString "}}") then
-        throw (.invalidTagSyntax pos "expected closing }}")
+        Sift.Parser.fail "expected closing }}"
       if trimAfter then Parser.setTrimNext true
       return (.variable ref, trimBefore)
 
     | none =>
-      throw (.unexpectedEnd "tag")
+      Sift.Parser.fail "unexpected end of input in tag"
 
   /-- Parse nodes until we hit a stop tag or end of input -/
   partial def parseNodes (stopTags : List String) : Parser (List Node × Option String) := do
@@ -644,7 +644,7 @@ mutual
       let ahead ← Parser.peekString 3
       if ahead.startsWith "{{/" || ahead.startsWith "{{e" || ahead.startsWith "{{~" || ahead.startsWith "{{-" then
         -- Save position for potential backtrack
-        let s ← get
+        let s ← Sift.Parser.get
 
         if ahead.startsWith "{{/" then
           let _ ← Parser.tryString "{{/"
@@ -658,9 +658,11 @@ mutual
             break
           else
             -- Not our closing tag - error
-            let pos ← Parser.getPosition
             let expected := stopTags.head?
-            throw (.unmatchedTag pos name expected)
+            match expected with
+            | some exp => Sift.Parser.fail ("unmatched tag '{{/" ++ name ++ "}}', expected '{{/" ++ exp ++ "}}'")
+            | none => Sift.Parser.fail ("unexpected closing tag '{{/" ++ name ++ "}}'")
+
 
         else if ← Parser.tryString "{{" then
           -- Check for trim marker that might precede / or else
@@ -678,20 +680,22 @@ mutual
               foundTag := some name
               break
             else
-              let pos ← Parser.getPosition
               let expected := stopTags.head?
-              throw (.unmatchedTag pos name expected)
+              match expected with
+              | some exp => Sift.Parser.fail ("unmatched tag '{{/" ++ name ++ "}}', expected '{{/" ++ exp ++ "}}'")
+              | none => Sift.Parser.fail ("unexpected closing tag '{{/" ++ name ++ "}}'")
+
 
           else if ← Parser.tryString "else" then
             if trimBefore then
               nodes := trimLastNodeRight nodes
             -- Check if it's {{else}} or {{else if ...}}
             skipWhitespace
-            match ← Parser.peek? with
+            match ← peek with
             | some c =>
               if c == '~' || c == '-' then
                 -- Trim marker before }}
-                let _ ← Parser.next
+                let _ ← anyChar
                 skipWhitespace
               if c == '}' || c == '~' || c == '-' then
                 -- Check for trim marker
@@ -704,7 +708,7 @@ mutual
                   break
                 else
                   -- else is not expected here, restore and treat as text
-                  set s
+                  Sift.Parser.set s
               else
                 -- It's {{else if ...}} or {{else something}}, report as "else"
                 if stopTags.contains "else" then
@@ -712,12 +716,12 @@ mutual
                   break
                 else
                   -- else is not expected here, restore and treat as text
-                  set s
+                  Sift.Parser.set s
             | none =>
-              set s
+              Sift.Parser.set s
           else
             -- Not an else or close tag, restore
-            set s
+            Sift.Parser.set s
 
       -- Try to parse text first
       match ← parseText with
@@ -741,7 +745,7 @@ mutual
           break
         else
           -- This shouldn't happen, but consume a char to avoid infinite loop
-          let c ← Parser.next
+          let c ← anyChar
           nodes := nodes ++ [.text (String.ofList [c])]
 
     return (nodes, foundTag)
@@ -753,13 +757,13 @@ def parseTemplate : Parser Template := do
   -- Check for unexpected closing tag
   match foundTag with
   | some tag =>
-    let pos ← Parser.getPosition
-    throw (.unmatchedTag pos tag none)
+    Sift.Parser.fail ("unexpected closing tag '{{/" ++ tag ++ "}}'")
+
   | none => pure ()
   return { nodes }
 
 /-- Public API: Parse a template string -/
-def parse (input : String) : ParseResult Template :=
+def parse (input : String) : Except Sift.ParseError Template :=
   Parser.run parseTemplate input
 
 end Stencil.Parser

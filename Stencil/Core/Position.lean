@@ -1,18 +1,12 @@
 /-
   Stencil.Core.Position
-  Source position tracking for error reporting
+  Source position tracking for error reporting - uses Sift's SourcePos
 -/
+import Sift
 
 namespace Stencil
 
-/-- Position in template source -/
-structure Position where
-  offset : Nat
-  line : Nat
-  column : Nat
-  deriving Repr, BEq, Inhabited
-
-instance : ToString Position where
-  toString p := s!"line {p.line}, column {p.column}"
+/-- Position in template source (alias for Sift.SourcePos) -/
+abbrev Position := Sift.SourcePos
 
 end Stencil

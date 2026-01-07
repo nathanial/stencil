@@ -1,73 +1,48 @@
 /-
   Stencil.Parser.Primitives
-  Low-level parsing helpers
+  Low-level parsing helpers using Sift
 -/
 import Stencil.Parser.State
 
 namespace Stencil.Parser
 
+open Sift
+
 /-- Skip whitespace characters -/
-def skipWhitespace : Parser Unit := do
-  while true do
-    match ← Parser.peek? with
-    | some c =>
-      if c == ' ' || c == '\t' || c == '\n' || c == '\r' then
-        let _ ← Parser.next
-      else
-        break
-    | none => break
+def skipWhitespace : Parser Unit :=
+  skipMany (satisfy fun c => c == ' ' || c == '\t' || c == '\n' || c == '\r')
 
 /-- Read characters while predicate holds -/
-def readWhile (pred : Char → Bool) : Parser String := do
-  -- Track start position for efficient substring extraction
-  let s ← get
-  let startPos := s.pos
-  while true do
-    match ← Parser.peek? with
-    | some c =>
-      if pred c then
-        let _ ← Parser.next
-      else
-        break
-    | none => break
-  let s' ← get
-  let endPos := s'.pos
-  -- Extract substring directly (O(n) instead of O(n²))
-  return s.input.extract ⟨startPos⟩ ⟨endPos⟩
+def readWhile (pred : Char → Bool) : Parser String :=
+  manyChars (satisfy pred)
 
 /-- Read at least one character matching predicate -/
 def readWhile1 (pred : Char → Bool) (expected : String) : Parser String := do
-  let pos ← Parser.getPosition
-  let result ← readWhile pred
+  let result ← manyChars (satisfy pred)
   if result.isEmpty then
-    match ← Parser.peek? with
-    | some c => throw (.unexpectedChar pos c expected)
-    | none => throw (.unexpectedEnd expected)
-  return result
+    Sift.Parser.fail s!"expected {expected}"
+  pure result
 
 /-- Read until a delimiter string (not consuming the delimiter) -/
-def readUntil (stop : String) : Parser String := do
-  -- Track start position for efficient substring extraction
-  let s ← get
+partial def readUntil (stop : String) : Parser String := do
+  let s ← Sift.Parser.get
   let startPos := s.pos
-  while true do
-    if ← Parser.atEnd then
-      break
-    let ahead ← Parser.peekString stop.length
-    if ahead == stop then
-      break
-    let _ ← Parser.next
-  let s' ← get
-  let endPos := s'.pos
-  -- Extract substring directly (O(n) instead of O(n²))
-  return s.input.extract ⟨startPos⟩ ⟨endPos⟩
+  let rec loop : Parser Unit := do
+    if ← Parser.atEnd then pure ()
+    else
+      let ahead ← Parser.peekString stop.length
+      if ahead == stop then pure ()
+      else do let _ ← anyChar; loop
+  loop
+  let s' ← Sift.Parser.get
+  pure (s.input.extract ⟨startPos⟩ ⟨s'.pos⟩)
 
 /-- Read until a delimiter string and consume it -/
 def readUntilAndConsume (stop : String) : Parser String := do
   let result ← readUntil stop
   if !(← Parser.atEnd) then
     let _ ← Parser.tryString stop
-  return result
+  pure result
 
 /-- Check if character is alphanumeric or underscore -/
 def isIdentChar (c : Char) : Bool :=
@@ -86,34 +61,27 @@ def isFilterNameChar (c : Char) : Bool :=
   c.isAlpha || c.isDigit || c == '_'
 
 /-- Try to run a parser, returning None on failure (with backtracking) -/
-def tryParse {α : Type} (p : Parser α) : Parser (Option α) := do
-  let s ← get
-  match (ExceptT.run p).run s with
-  | (Except.ok result, s') =>
-    set s'
-    return some result
-  | (Except.error _, _) =>
-    return none
+def tryParse {α : Type} (p : Parser α) : Parser (Option α) :=
+  Sift.optional (attempt p)
 
 /-- Parse a quoted string argument for filters -/
-def parseQuotedString : Parser String := do
-  let quoteChar ← Parser.next
+partial def parseQuotedString : Parser String := do
+  let quoteChar ← anyChar
   if quoteChar != '"' && quoteChar != '\'' then
-    let pos ← Parser.getPosition
-    throw (.unexpectedChar pos quoteChar "quote character")
+    Sift.Parser.fail "expected quote character"
   let mut result := ""
   while true do
-    match ← Parser.peek? with
-    | none => throw (.unexpectedEnd "quoted string")
+    match ← peek with
+    | none => Sift.Parser.fail "unexpected end in quoted string"
     | some c =>
-      let _ ← Parser.next
+      let _ ← anyChar
       if c == quoteChar then
         break
       else if c == '\\' then
-        match ← Parser.peek? with
-        | none => throw (.unexpectedEnd "escape sequence")
+        match ← peek with
+        | none => Sift.Parser.fail "unexpected end in escape sequence"
         | some escaped =>
-          let _ ← Parser.next
+          let _ ← anyChar
           let actualChar := match escaped with
             | 'n' => '\n'
             | 't' => '\t'
@@ -122,6 +90,6 @@ def parseQuotedString : Parser String := do
           result := result.push actualChar
       else
         result := result.push c
-  return result
+  pure result
 
 end Stencil.Parser
