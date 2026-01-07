@@ -2,7 +2,7 @@ import Lake
 open Lake DSL
 
 package stencil where
-  version := v!"0.1.0"
+  version := v!"0.1.4"
   leanOptions := #[
     ⟨`autoImplicit, false⟩,
     ⟨`relaxedAutoImplicit, false⟩
@@ -10,7 +10,7 @@ package stencil where
 
 require scribe from git "https://github.com/nathanial/scribe" @ "v0.0.2"
 require crucible from git "https://github.com/nathanial/crucible" @ "v0.0.3"
-require sift from git "https://github.com/nathanial/sift" @ "v0.0.3"
+require sift from git "https://github.com/nathanial/sift" @ "v0.0.4"
 
 @[default_target]
 lean_lib Stencil where
