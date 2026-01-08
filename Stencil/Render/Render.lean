@@ -6,6 +6,7 @@ import Stencil.Core.Context
 import Stencil.Core.Error
 import Stencil.AST.Types
 import Stencil.Render.Filters
+import Stencil.Render.Helpers
 import Scribe
 
 namespace Stencil.Render
@@ -30,8 +31,12 @@ def withContext {α : Type} (ctx : Context) (m : RenderM α) : RenderM α :=
 def renderVarToString (ref : VarRef) : RenderM String := do
   let ctx ← getContext
   -- Return null for missing variables (allows default filter to work)
-  -- Use pre-split path parts for faster lookup
-  let value := ctx.lookupParts ref.pathParts ref.path |>.getD .null
+  -- Handle parent path traversal (../)
+  let value := if ref.parentLevels > 0 then
+    ctx.lookupFromParent ref.path ref.parentLevels |>.getD .null
+  else
+    -- Use pre-split path parts for faster lookup
+    ctx.lookupParts ref.pathParts ref.path |>.getD .null
 
   -- Apply filters with position for error reporting
   -- Use custom filters if any are registered
@@ -55,7 +60,12 @@ def renderVariable (ref : VarRef) : RenderM Html := do
 partial def evalExpr (expr : Expr) : RenderM Value := do
   let ctx ← getContext
   match expr with
-  | .var path => return ctx.lookup path |>.getD .null
+  | .var path parentLevels =>
+    -- Handle parent path traversal (../)
+    if parentLevels > 0 then
+      return ctx.lookupFromParent path parentLevels |>.getD .null
+    else
+      return ctx.lookup path |>.getD .null
   | .strLit s => return .string s
   | .intLit n => return .int n
   | .floatLit f => return .float f
@@ -78,6 +88,17 @@ partial def evalExpr (expr : Expr) : RenderM Value := do
       if lv.isTruthy then return .bool true
       let rv ← evalExpr right
       return .bool rv.isTruthy
+  | .call name args =>
+    -- Helper function call: (eq a b)
+    match lookupHelper ctx name with
+    | some helperFn =>
+      let argValues ← args.mapM evalExpr
+      match helperFn argValues none with
+      | .ok v => return v
+      | .error e => throw e
+    | none =>
+      -- Unknown helper, return null (could also throw an error)
+      return .null
 where
   /-- Compare two values -/
   compareValues (op : CompareOp) (a b : Value) : Bool :=

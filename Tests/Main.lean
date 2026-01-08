@@ -776,6 +776,127 @@ test "Each over object with @key" := do
   let result ← shouldBeOk (render tmpl ctx) "rendering"
   result.render ≡ "x=1 y=2 "
 
+-- Subexpression Tests (Helper Functions)
+
+test "Subexpr: eq helper - equal" := do
+  let tmpl ← shouldBeOk (parse "{{#if (eq x 1)}}yes{{else}}no{{/if}}") "parsing"
+  let ctx := context [("x", .int 1)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "yes"
+
+test "Subexpr: eq helper - not equal" := do
+  let tmpl ← shouldBeOk (parse "{{#if (eq x 1)}}yes{{else}}no{{/if}}") "parsing"
+  let ctx := context [("x", .int 2)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "no"
+
+test "Subexpr: ne helper" := do
+  let tmpl ← shouldBeOk (parse "{{#if (ne status \"done\")}}pending{{else}}done{{/if}}") "parsing"
+  let ctx := context [("status", .string "active")]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "pending"
+
+test "Subexpr: lt helper" := do
+  let tmpl ← shouldBeOk (parse "{{#if (lt x 5)}}small{{else}}large{{/if}}") "parsing"
+  let ctx := context [("x", .int 3)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "small"
+
+test "Subexpr: gt helper" := do
+  let tmpl ← shouldBeOk (parse "{{#if (gt x 5)}}large{{else}}small{{/if}}") "parsing"
+  let ctx := context [("x", .int 10)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "large"
+
+test "Subexpr: le helper" := do
+  let tmpl ← shouldBeOk (parse "{{#if (le x 5)}}ok{{else}}too big{{/if}}") "parsing"
+  let ctx := context [("x", .int 5)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "ok"
+
+test "Subexpr: ge helper" := do
+  let tmpl ← shouldBeOk (parse "{{#if (ge x 5)}}ok{{else}}too small{{/if}}") "parsing"
+  let ctx := context [("x", .int 5)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "ok"
+
+test "Subexpr: and helper" := do
+  let tmpl ← shouldBeOk (parse "{{#if (and a b)}}both{{else}}not both{{/if}}") "parsing"
+  let ctx := context [("a", .bool true), ("b", .bool true)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "both"
+
+test "Subexpr: or helper" := do
+  let tmpl ← shouldBeOk (parse "{{#if (or a b)}}either{{else}}neither{{/if}}") "parsing"
+  let ctx := context [("a", .bool false), ("b", .bool true)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "either"
+
+test "Subexpr: not helper" := do
+  let tmpl ← shouldBeOk (parse "{{#if (not done)}}pending{{else}}done{{/if}}") "parsing"
+  let ctx := context [("done", .bool false)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "pending"
+
+test "Subexpr: in unless block" := do
+  let tmpl ← shouldBeOk (parse "1 page{{#unless (eq count 1)}}s{{/unless}}") "parsing"
+  let ctx := context [("count", .int 1)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "1 page"
+
+test "Subexpr: unless with plural" := do
+  let tmpl ← shouldBeOk (parse "{{count}} page{{#unless (eq count 1)}}s{{/unless}}") "parsing"
+  let ctx := context [("count", .int 5)]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "5 pages"
+
+-- Parent Path Tests (../)
+
+test "Parent path: access parent in each" := do
+  let tmpl ← shouldBeOk (parse "{{#each items}}/{{../prefix}}/{{this}} {{/each}}") "parsing"
+  let ctx := context [
+    ("prefix", .string "item"),
+    ("items", .array #[.string "a", .string "b", .string "c"])
+  ]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "/item/a /item/b /item/c "
+
+test "Parent path: access parent id in each" := do
+  let tmpl ← shouldBeOk (parse "{{#each pages}}<a href=\"/novel/{{../id}}/page/{{this}}\">{{this}}</a>{{/each}}") "parsing"
+  let ctx := context [
+    ("id", .int 42),
+    ("pages", .array #[.int 1, .int 2, .int 3])
+  ]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "<a href=\"/novel/42/page/1\">1</a><a href=\"/novel/42/page/2\">2</a><a href=\"/novel/42/page/3\">3</a>"
+
+test "Parent path: multiple levels" := do
+  let tmpl ← shouldBeOk (parse "{{#each outer}}{{#each inner}}{{../../root}}-{{../mid}}-{{this}} {{/each}}{{/each}}") "parsing"
+  let ctx := context [
+    ("root", .string "R"),
+    ("outer", .array #[
+      .object #[
+        ("mid", .string "M1"),
+        ("inner", .array #[.string "a", .string "b"])
+      ],
+      .object #[
+        ("mid", .string "M2"),
+        ("inner", .array #[.string "c"])
+      ]
+    ])
+  ]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "R-M1-a R-M1-b R-M2-c "
+
+test "Parent path: in condition" := do
+  let tmpl ← shouldBeOk (parse "{{#each items}}{{#if ../showIndex}}{{@index}}: {{/if}}{{this}} {{/each}}") "parsing"
+  let ctx := context [
+    ("showIndex", .bool true),
+    ("items", .array #[.string "a", .string "b"])
+  ]
+  let result ← shouldBeOk (render tmpl ctx) "rendering"
+  result.render ≡ "0: a 1: b "
+
 #generate_tests
 
 end Stencil.Tests

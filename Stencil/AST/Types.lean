@@ -19,6 +19,7 @@ structure VarRef where
   filters : List Filter := []
   escaped : Bool := true
   pos : Position := default
+  parentLevels : Nat := 0  -- Number of ../ prefixes for parent scope access
   deriving Repr, BEq, Inhabited
 
 /-- Comparison operators -/
@@ -40,7 +41,7 @@ inductive LogicOp where
 /-- Expression for conditionals -/
 inductive Expr where
   /-- Variable reference: `user.name` -/
-  | var (path : String)
+  | var (path : String) (parentLevels : Nat := 0)
   /-- String literal: `"active"` -/
   | strLit (value : String)
   /-- Integer literal: `42` -/
@@ -55,6 +56,8 @@ inductive Expr where
   | logic (op : LogicOp) (left : Expr) (right : Expr)
   /-- Logical not: `!a` -/
   | not (expr : Expr)
+  /-- Helper function call: `(eq a b)` -/
+  | call (name : String) (args : List Expr)
   deriving Repr, Inhabited
 
 /-- Each loop configuration -/

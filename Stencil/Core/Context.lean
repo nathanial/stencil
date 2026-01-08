@@ -27,6 +27,12 @@ abbrev CustomFilterFn := Value → List String → Option Position → RenderRes
 /-- Registry of custom filters -/
 abbrev FilterRegistry := Std.HashMap String CustomFilterFn
 
+/-- Helper function type (for subexpressions like (eq a b)) -/
+abbrev HelperFn := List Value → Option Position → RenderResult Value
+
+/-- Registry of helper functions -/
+abbrev HelperRegistry := Std.HashMap String HelperFn
+
 /-- Block definition for template inheritance -/
 structure BlockDef where
   body : List Node
@@ -41,6 +47,7 @@ structure Context where
   data : Value
   partials : PartialRegistry := {}
   customFilters : FilterRegistry := {}
+  helpers : HelperRegistry := {}
   blocks : BlockRegistry := {}
   currentBlock : Option String := none
   parent : Option Context := none
@@ -115,6 +122,7 @@ def pushScope (ctx : Context) (data : Value) (loopInfo : LoopMeta) : Context :=
   { data := data
   , partials := ctx.partials
   , customFilters := ctx.customFilters
+  , helpers := ctx.helpers
   , blocks := ctx.blocks
   , currentBlock := ctx.currentBlock
   , parent := some ctx
@@ -126,6 +134,7 @@ def pushSectionScope (ctx : Context) (data : Value) : Context :=
   { data := data
   , partials := ctx.partials
   , customFilters := ctx.customFilters
+  , helpers := ctx.helpers
   , blocks := ctx.blocks
   , currentBlock := ctx.currentBlock
   , parent := some ctx
@@ -174,6 +183,29 @@ def mergeData (ctx : Context) (newData : Value) : Context :=
       .object merged
     | _, new => new  -- Non-objects: just use new data
   { ctx with data := mergedData }
+
+/-- Register a helper function -/
+def addHelper (ctx : Context) (name : String) (fn : HelperFn) : Context :=
+  { ctx with helpers := ctx.helpers.insert name fn }
+
+/-- Look up a helper function -/
+def getHelper (ctx : Context) (name : String) : Option HelperFn :=
+  ctx.helpers.get? name
+
+/-- Traverse up N parent levels, returning the target context -/
+partial def getParentContext (ctx : Context) (levels : Nat) : Option Context :=
+  if levels == 0 then
+    some ctx
+  else
+    match ctx.parent with
+    | some p => p.getParentContext (levels - 1)
+    | none => none
+
+/-- Look up a path starting from a parent context N levels up -/
+partial def lookupFromParent (ctx : Context) (path : String) (parentLevels : Nat) : Option Value :=
+  match ctx.getParentContext parentLevels with
+  | some targetCtx => targetCtx.lookup path
+  | none => none
 
 end Context
 

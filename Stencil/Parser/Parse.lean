@@ -40,15 +40,30 @@ def parseFilters : Parser (List Filter) := do
     skipWhitespace
   return filters
 
+/-- Count and consume leading ../ segments for parent context access -/
+def parseParentPrefix : Parser Nat := do
+  let mut levels : Nat := 0
+  while true do
+    -- Check for "../"
+    let ahead ← Parser.peekString 3
+    if ahead.startsWith "../" then
+      let _ ← Parser.tryString "../"
+      levels := levels + 1
+    else
+      break
+  return levels
+
 /-- Parse a variable path with optional filters -/
 def parseVarRef (escaped : Bool) (pos : Position) : Parser VarRef := do
   skipWhitespace
+  -- Check for parent path prefix: ../
+  let parentLevels ← parseParentPrefix
   let path ← readWhile1 isPathChar "variable path"
   -- Pre-split path for faster lookup at render time
   let pathParts := path.splitOn "." |>.filter (!·.isEmpty)
   let filters ← parseFilters
   skipWhitespace
-  return { path, pathParts, filters, escaped, pos }
+  return { path, pathParts, filters, escaped, pos, parentLevels }
 
 /-- Check for opening delimiter and detect type -/
 def checkOpenDelim : Parser Bool := do
@@ -167,7 +182,20 @@ private def parseCompareOp : Parser (Option CompareOp) := do
 
 -- Expression parsing is mutually recursive
 mutual
-  /-- Parse an atom (variable, literal, or parenthesized expression) -/
+  /-- Parse helper call arguments (expressions separated by whitespace until ')') -/
+  partial def parseHelperArgs : Parser (List Expr) := do
+    let mut args : List Expr := []
+    while true do
+      skipWhitespace
+      match ← peek with
+      | some ')' => break
+      | some _ =>
+        let arg ← parseAtom
+        args := args ++ [arg]
+      | none => break
+    return args
+
+  /-- Parse an atom (variable, literal, parenthesized expression, or helper call) -/
   partial def parseAtom : Parser Expr := do
     skipWhitespace
     match ← peek with
@@ -178,17 +206,69 @@ mutual
         parseNumber
       else if c == '(' then
         let _ ← anyChar  -- consume '('
-        let expr ← parseOr
         skipWhitespace
+        -- Check if this is a helper call: (helperName arg1 arg2)
+        -- or a grouping expression: (expr)
+        -- Strategy: try to read an identifier, then see what follows
+        let savedState ← Sift.Parser.get
         match ← peek with
-        | some ')' => let _ ← anyChar
-        | _ =>
-          Sift.Parser.fail "expected ')'"
-        return expr
+        | some ch =>
+          if isIdentChar ch then
+            -- Could be a helper name or start of an expression
+            let ident ← readWhile isIdentChar
+            skipWhitespace
+            match ← peek with
+            | some ')' =>
+              -- Just (identifier), treat as grouping of a variable
+              let _ ← anyChar -- consume ')'
+              return .var ident 0
+            | some op =>
+              if op == '=' || op == '!' || op == '<' || op == '>' || op == '&' || op == '|' then
+                -- It's an expression like (x == y), restore and parse as grouping
+                Sift.Parser.set savedState
+                let _ ← anyChar  -- consume '(' again
+                let expr ← parseOr
+                skipWhitespace
+                match ← peek with
+                | some ')' => let _ ← anyChar
+                | _ => Sift.Parser.fail "expected ')'"
+                return expr
+              else
+                -- It's a helper call: (helperName arg1 arg2 ...)
+                let args ← parseHelperArgs
+                skipWhitespace
+                match ← peek with
+                | some ')' => let _ ← anyChar
+                | _ => Sift.Parser.fail "expected ')'"
+                return .call ident args
+            | none => Sift.Parser.fail "unexpected end of input in expression"
+          else
+            -- Starts with non-identifier, parse as grouping expression
+            let expr ← parseOr
+            skipWhitespace
+            match ← peek with
+            | some ')' => let _ ← anyChar
+            | _ => Sift.Parser.fail "expected ')'"
+            return expr
+        | none => Sift.Parser.fail "unexpected end of input in expression"
       else if c == '!' then
         let _ ← anyChar
         let inner ← parseAtom
         return .not inner
+      else if c == '.' then
+        -- Could be parent path: ../
+        let parentLevels ← parseParentPrefix
+        if parentLevels > 0 then
+          -- Parse the rest of the path
+          let name ← readWhile isPathChar
+          if name.isEmpty then
+            -- Just ".." with no following path, use "this" as default
+            return .var "this" parentLevels
+          else
+            return .var name parentLevels
+        else
+          -- Just a dot, not a parent path
+          Sift.Parser.fail s!"unexpected '.', expected expression"
       else
         -- Variable or keyword
         let name ← readWhile isPathChar
@@ -197,7 +277,7 @@ mutual
         match name with
         | "true" => return .boolLit true
         | "false" => return .boolLit false
-        | _ => return .var name
+        | _ => return .var name 0
     | none => Sift.Parser.fail "unexpected end of input in expression"
 
   /-- Parse comparison expression: `a == b`, `a > b`, etc. -/
@@ -265,7 +345,7 @@ def parsePartialParams : Parser (List (String × Expr)) := do
           params := params ++ [(key, value)]
         else
           -- Just a variable name without =, treat as key=key
-          params := params ++ [(key, .var key)]
+          params := params ++ [(key, .var key 0)]
       else
         break
     | none => break
@@ -530,7 +610,7 @@ mutual
 
       let _ ← Parser.popTag
       -- Treat as simple variable truthiness check
-      return .conditional [(.var argTrimmed, body)] elseBody false startPos
+      return .conditional [(.var argTrimmed 0, body)] elseBody false startPos
 
   /-- Parse a single tag (after detecting `{{`), returns (Node, trimBefore) -/
   partial def parseTag : Parser (Node × Bool) := do

@@ -75,6 +75,10 @@ abbrev FilterFn := Filters.FilterFn
 def withFilter (ctx : Context) (name : String) (fn : FilterFn) : Context :=
   ctx.addFilter name fn
 
+/-- Register a custom helper in a context -/
+def withHelper (ctx : Context) (name : String) (fn : HelperFn) : Context :=
+  ctx.addHelper name fn
+
 /-- Format a parse error with source context for display -/
 def formatParseError' (err : Sift.ParseError) (input : String) : String :=
   Stencil.formatParseError err input
