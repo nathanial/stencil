@@ -328,8 +328,8 @@ def parseCondition : Parser Expr := do
   skipWhitespace
   return expr
 
-/-- Parse partial parameters: `key=value key2="string"` -/
-def parsePartialParams : Parser (List (String × Expr)) := do
+/-- Parse partial hash parameters: `key=value key2="string"` -/
+def parsePartialHashParams : Parser (List (String × Expr)) := do
   let mut params : List (String × Expr) := []
   while true do
     skipWhitespace
@@ -337,6 +337,8 @@ def parsePartialParams : Parser (List (String × Expr)) := do
     | some '}' => break
     | some c =>
       if isIdentChar c then
+        -- Save state to backtrack if needed
+        let savedState ← Sift.Parser.get
         let key ← readWhile1 isIdentChar "parameter name"
         skipWhitespace
         if ← Parser.tryChar '=' then
@@ -344,21 +346,72 @@ def parsePartialParams : Parser (List (String × Expr)) := do
           let value ← parseAtom
           params := params ++ [(key, value)]
         else
-          -- Just a variable name without =, treat as key=key
-          params := params ++ [(key, .var key 0)]
+          -- Not a hash param (no =), backtrack and stop
+          Sift.Parser.set savedState
+          break
       else
         break
     | none => break
   return params
 
-/-- Parse a partial with parameters: `{{> name key=value}}` -/
+/-- Parse partial context and hash params.
+    Syntax: `{{> name context hash...}}` where context is optional.
+    Context is a single expression (path/literal) that becomes the partial's context.
+    Hash params are key=value pairs that get merged into the context.
+    Example: `{{> partial user}}` - context is user
+    Example: `{{> partial user name=user.name}}` - context is user, name is merged
+    Example: `{{> partial name=value}}` - no context change, name is merged -/
+def parsePartialArgs : Parser (Option Expr × List (String × Expr)) := do
+  skipWhitespace
+  match ← peek with
+  | some '}' => return (none, [])
+  | some c =>
+    if isIdentChar c then
+      -- Could be a context variable/path or a hash param key
+      let savedState ← Sift.Parser.get
+      let ident ← readWhile1 isIdentChar "identifier"
+      skipWhitespace
+      if ← Parser.tryChar '=' then
+        -- It's a hash param, backtrack and parse as hash
+        Sift.Parser.set savedState
+        let hash ← parsePartialHashParams
+        return (none, hash)
+      else
+        -- Check for path continuation (dots)
+        let mut fullPath := ident
+        while (← peek) == some '.' do
+          let _ ← anyChar
+          let segment ← readWhile1 isIdentChar "path segment"
+          fullPath := fullPath ++ "." ++ segment
+        skipWhitespace
+        -- This is a context expression, now parse remaining hash params
+        let contextExpr := Expr.var fullPath 0
+        let hash ← parsePartialHashParams
+        return (some contextExpr, hash)
+    else if c == '"' || c == '\'' then
+      -- String literal as context
+      let str ← parseQuotedString
+      skipWhitespace
+      let hash ← parsePartialHashParams
+      return (some (.strLit str), hash)
+    else if c.isDigit then
+      -- Number literal as context
+      let numExpr ← parseNumber
+      skipWhitespace
+      let hash ← parsePartialHashParams
+      return (some numExpr, hash)
+    else
+      return (none, [])
+  | none => return (none, [])
+
+/-- Parse a partial with optional context and parameters: `{{> name context key=value}}` -/
 def parsePartial (pos : Position) : Parser Node := do
   skipWhitespace
   let name ← readWhile1 isPartialNameChar "partial name"
-  let params ← parsePartialParams
+  let (context, params) ← parsePartialArgs
   skipWhitespace
   let _ ← Parser.tryString "}}"
-  return .«partial» name params pos
+  return .«partial» name context params pos
 
 /-- Trim trailing whitespace from the last text node in a list -/
 private def trimLastNodeRight (nodes : List Node) : List Node :=
@@ -544,7 +597,7 @@ mutual
 
     | "let" =>
       -- Parse: {{#let x=value y=other}}...{{/let}}
-      let bindings ← parsePartialParams  -- Reuse param parsing for key=value pairs
+      let bindings ← parsePartialHashParams  -- key=value pairs only
       skipWhitespace
       let trimAfter ← tryTrimEnd
       let _ ← Parser.tryString "}}"
@@ -652,10 +705,10 @@ mutual
       -- Section open - check for partial block {{#>}}
       let _ ← anyChar
       if ← Parser.tryChar '>' then
-        -- Partial block: {{#> name}}...{{/name}}
+        -- Partial block: {{#> name context key=value}}...{{/name}}
         skipWhitespace
         let name ← readWhile1 isPartialNameChar "partial name"
-        let params ← parsePartialParams
+        let (context, params) ← parsePartialArgs
         skipWhitespace
         let trimAfter ← tryTrimEnd
         let _ ← Parser.tryString "}}"
@@ -663,7 +716,7 @@ mutual
         Parser.pushTag name
         let (body, _) ← parseNodes [name]
         let _ ← Parser.popTag
-        return (.partialBlock name params body pos, trimBefore)
+        return (.partialBlock name context params body pos, trimBefore)
       else
         let node ← parseSection pos trimBefore
         return (node, trimBefore)
@@ -680,12 +733,12 @@ mutual
       let _ ← anyChar
       skipWhitespace
       let name ← readWhile1 isPartialNameChar "partial name"
-      let params ← parsePartialParams
+      let (context, params) ← parsePartialArgs
       skipWhitespace
       let trimAfter ← tryTrimEnd
       let _ ← Parser.tryString "}}"
       if trimAfter then Parser.setTrimNext true
-      return (.«partial» name params pos, trimBefore)
+      return (.«partial» name context params pos, trimBefore)
 
     | some '&' =>
       -- Unescaped variable (alternative syntax)

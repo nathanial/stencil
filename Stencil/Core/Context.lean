@@ -184,6 +184,10 @@ def mergeData (ctx : Context) (newData : Value) : Context :=
     | _, new => new  -- Non-objects: just use new data
   { ctx with data := mergedData }
 
+/-- Replace context data entirely (for partial context arguments) -/
+def withData (ctx : Context) (newData : Value) : Context :=
+  { ctx with data := newData }
+
 /-- Register a helper function -/
 def addHelper (ctx : Context) (name : String) (fn : HelperFn) : Context :=
   { ctx with helpers := ctx.helpers.insert name fn }

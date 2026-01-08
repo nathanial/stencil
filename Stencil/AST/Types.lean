@@ -90,10 +90,10 @@ inductive Node where
   | repeat (count : Expr) (body : List Node) (pos : Position)
   /-- Numeric range: {{#range 1 10}}...{{/range}} -/
   | range (start : Expr) («end» : Expr) (body : List Node) (pos : Position)
-  /-- Include a partial template with optional parameters -/
-  | «partial» (name : String) (params : List (String × Expr)) (pos : Position)
+  /-- Include a partial template with optional context and hash parameters -/
+  | «partial» (name : String) (context : Option Expr) (params : List (String × Expr)) (pos : Position)
   /-- Partial block: {{#> layout}}content{{/layout}} -/
-  | partialBlock (name : String) (params : List (String × Expr)) (body : List Node) (pos : Position)
+  | partialBlock (name : String) (context : Option Expr) (params : List (String × Expr)) (body : List Node) (pos : Position)
   /-- Template inheritance: {{#extends "base"}} -/
   | extends (name : String) (pos : Position)
   /-- Named block: {{#block "content"}}default{{/block}} -/

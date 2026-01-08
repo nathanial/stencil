@@ -275,38 +275,52 @@ mutual
         withContext childCtx (renderNodes body)
       return .fragment htmls
 
-  /-- Render a partial with optional parameters -/
-  partial def renderPartial (name : String) (params : List (String × Expr)) (pos : Position) : RenderM Html := do
+  /-- Render a partial with optional context and hash parameters.
+      If context is provided, it replaces the current data context.
+      Hash params are merged on top of the context (or current context if none). -/
+  partial def renderPartial (name : String) (context : Option Expr) (params : List (String × Expr)) (pos : Position) : RenderM Html := do
     let ctx ← getContext
     match ctx.getPartial name with
     | some tmpl =>
+      -- Determine base context: use provided context or keep current
+      let baseCtx ← match context with
+        | some contextExpr =>
+          let contextVal ← evalExpr contextExpr
+          pure (ctx.withData contextVal)
+        | none => pure ctx
+      -- If there are hash params, merge them on top
       if params.isEmpty then
-        renderNodes tmpl.nodes
+        withContext baseCtx (renderNodes tmpl.nodes)
       else
-        -- Evaluate params and merge into context
         let paramValues ← params.mapM fun (k, expr) => do
           let v ← evalExpr expr
           return (k, v)
         let paramData := Value.object paramValues.toArray
-        let childCtx := ctx.mergeData paramData
+        let childCtx := baseCtx.mergeData paramData
         withContext childCtx (renderNodes tmpl.nodes)
     | none => throw (.unknownPartial name (some pos))
 
-  /-- Render a partial block -/
-  partial def renderPartialBlock (name : String) (params : List (String × Expr)) (body : List Node) (pos : Position) : RenderM Html := do
+  /-- Render a partial block with optional context -/
+  partial def renderPartialBlock (name : String) (context : Option Expr) (params : List (String × Expr)) (body : List Node) (pos : Position) : RenderM Html := do
     let ctx ← getContext
     match ctx.getPartial name with
     | some tmpl =>
-      -- Render the block content first
+      -- Render the block content first (in current context)
       let blockHtml ← renderNodes body
-      -- Evaluate params
+      -- Determine base context: use provided context or keep current
+      let baseCtx ← match context with
+        | some contextExpr =>
+          let contextVal ← evalExpr contextExpr
+          pure (ctx.withData contextVal)
+        | none => pure ctx
+      -- Evaluate hash params
       let paramValues ← params.mapM fun (k, expr) => do
         let v ← evalExpr expr
         return (k, v)
-      -- Add @partialBlock to context (use camelCase since - isn't valid in paths)
+      -- Add @partialBlock to context
       let allParams := paramValues.toArray ++ #[("@partialBlock", .string blockHtml.render)]
       let paramData := Value.object allParams
-      let childCtx := ctx.mergeData paramData
+      let childCtx := baseCtx.mergeData paramData
       withContext childCtx (renderNodes tmpl.nodes)
     | none => throw (.unknownPartial name (some pos))
 
@@ -347,8 +361,8 @@ mutual
     | .«let» bindings body pos => renderLet bindings body pos
     | .repeat count body pos => renderRepeat count body pos
     | .range start «end» body pos => renderRange start «end» body pos
-    | .«partial» name params pos => renderPartial name params pos
-    | .partialBlock name params body pos => renderPartialBlock name params body pos
+    | .«partial» name context params pos => renderPartial name context params pos
+    | .partialBlock name context params body pos => renderPartialBlock name context params body pos
     | .extends _ _ => return .fragment []  -- Handled at template level
     | .block name body pos => renderBlock name body pos
     | .super pos => renderSuper pos

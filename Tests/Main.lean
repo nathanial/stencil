@@ -610,6 +610,38 @@ test "Partial block with params" := do
   let result ← shouldBeOk (render mainTmpl ctx) "rendering"
   result.render ≡ "<div class=\"container\">Hello</div>"
 
+test "Partial with context - replaces data context" := do
+  -- The partial accesses fields directly from the context object
+  let userCardTmpl ← shouldBeOk (parse "<span>{{name}} ({{age}})</span>") "parsing card"
+  let mainTmpl ← shouldBeOk (parse "{{> userCard user}}") "parsing main"
+  let ctx := context [
+    ("user", .object #[("name", .string "Alice"), ("age", .int 30)])
+  ] |>.addPartial "userCard" userCardTmpl
+  let result ← shouldBeOk (render mainTmpl ctx) "rendering"
+  result.render ≡ "<span>Alice (30)</span>"
+
+test "Partial with context and hash params" := do
+  -- Context sets base, hash params override/add
+  let userCardTmpl ← shouldBeOk (parse "{{name}} - {{role}}") "parsing card"
+  let mainTmpl ← shouldBeOk (parse "{{> userCard user role=\"Admin\"}}") "parsing main"
+  let ctx := context [
+    ("user", .object #[("name", .string "Bob")])
+  ] |>.addPartial "userCard" userCardTmpl
+  let result ← shouldBeOk (render mainTmpl ctx) "rendering"
+  result.render ≡ "Bob - Admin"
+
+test "Partial with path context" := do
+  -- Use a nested path as context
+  let nameTmpl ← shouldBeOk (parse "{{first}} {{last}}") "parsing name"
+  let mainTmpl ← shouldBeOk (parse "{{> name person.fullName}}") "parsing main"
+  let ctx := context [
+    ("person", .object #[
+      ("fullName", .object #[("first", .string "John"), ("last", .string "Doe")])
+    ])
+  ] |>.addPartial "name" nameTmpl
+  let result ← shouldBeOk (render mainTmpl ctx) "rendering"
+  result.render ≡ "John Doe"
+
 test "Block renders default content" := do
   let tmpl ← shouldBeOk (parse "{{#block \"main\"}}Default{{/block}}") "parsing"
   let ctx := Context.empty
