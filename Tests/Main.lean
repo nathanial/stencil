@@ -929,7 +929,7 @@ test "Parent path: in condition" := do
   let result ← shouldBeOk (render tmpl ctx) "rendering"
   result.render ≡ "0: a 1: b "
 
-#generate_tests
+
 
 end Stencil.Tests
 
